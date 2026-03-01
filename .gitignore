@@ -1,0 +1,25 @@
+node_modules/
+dist/
+*.js
+*.d.ts
+*.d.mts
+*.js.map
+*.d.ts.map
+
+# Keep config files
+!eslint.config.mjs
+!vitest.config.ts
+
+# Env
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+
+# Coverage
+coverage/
