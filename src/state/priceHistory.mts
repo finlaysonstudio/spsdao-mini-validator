@@ -24,7 +24,15 @@ export class PriceHistoryStore {
     return [...this.entries];
   }
 
-  load(entries: Partial<PriceEntry>[]): void {
+  load(
+    entries: {
+      validator?: string;
+      token?: string;
+      block_num?: number;
+      block_time?: string | Date;
+      token_price?: number;
+    }[],
+  ): void {
     for (const e of entries) {
       if (!e.validator || !e.token) continue;
       this.entries.push({

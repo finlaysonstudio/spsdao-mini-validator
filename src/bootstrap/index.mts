@@ -23,19 +23,61 @@ export async function bootstrap(
   state.delegations.load(seed.active_delegations ?? []);
   state.unstaking.load(seed.token_unstaking ?? []);
   state.pools.load(seed.pools ?? [], seed.staking_pool_reward_debt ?? []);
-  state.promises.load(seed.promises ?? []);
   state.config.load(seed.config ?? []);
-  state.checkIns.load(seed.check_ins ?? []);
-  state.hiveAccounts.load(seed.hive_accounts ?? []);
+
+  // Promises — normalize from DB format
+  const promises = (seed.promises ?? []).map((p) => ({
+    id: String(p.id),
+    type: p.type,
+    controller: p.controller ?? p.controllers?.[0] ?? "",
+    fulfilled_by: p.fulfilled_by,
+    params: p.params ?? {},
+    status: p.status,
+    created_block_num: p.created_block_num ?? 0,
+    expiration_block_num: p.expiration_block_num,
+  }));
+  state.promises.load(promises);
+
+  // Check-ins — normalize from DB format (last_check_in_block_num → block_num)
+  const checkIns = (seed.check_ins ?? []).map((ci) => ({
+    account: ci.account,
+    block_num: ci.block_num ?? ci.last_check_in_block_num ?? 0,
+    hash: ci.hash ?? "",
+  }));
+  state.checkIns.load(checkIns);
+
+  // Hive accounts — handle both string[] and {name}[] formats
+  const hiveAccounts =
+    seed.hive_accounts?.map((a) => (typeof a === "string" ? a : a.name)) ?? [];
+  state.hiveAccounts.load(hiveAccounts);
+
+  // Price history
+  if (seed.price_history) {
+    state.priceHistory.load(seed.price_history);
+  }
 
   // Store the seed block reference
   state.blocks.set({
     block_num: seed.block_num,
     block_id: seed.block_id,
-    prev_block_id: "",
+    prev_block_id: seed.prev_block_id ?? "",
     block_time: new Date(seed.block_time),
     l2_block_id: seed.l2_block_id,
   });
+
+  // Load recent blocks (needed for check-in hash verification)
+  if (seed.recent_blocks) {
+    for (const rb of seed.recent_blocks) {
+      if (rb.block_num === seed.block_num) continue; // already added above
+      state.blocks.set({
+        block_num: rb.block_num,
+        block_id: rb.block_id,
+        prev_block_id: rb.prev_block_id,
+        block_time: new Date(rb.block_time),
+        l2_block_id: rb.l2_block_id,
+      });
+    }
+  }
 
   // Build known hashes map for verification
   const knownHashes = new Map<number, string>();
