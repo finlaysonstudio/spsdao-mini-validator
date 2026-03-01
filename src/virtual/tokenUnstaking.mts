@@ -54,7 +54,7 @@ export function generateTokenUnstaking(
           qty: amount,
           unstake_tx: record.unstake_tx,
         },
-        trxId: `sl_token_unstaking_${record.token}_${blockNum}`,
+        trxId: `sl_token_unstaking_${blockNum}`,
         opIndex: 0,
         actionIndex: results.length,
       },

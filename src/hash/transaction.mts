@@ -27,11 +27,8 @@ export function buildTransactionEntity(
   const resultStr =
     result.events.length > 0 ? JSON.stringify({ events: result.events }) : null;
 
-  // Data serialization: JSON.stringify(action.params)
-  const dataStr =
-    action.params && Object.keys(action.params).length > 0
-      ? JSON.stringify(action.params)
-      : null;
+  // Data serialization: always JSON.stringify(action.params)
+  const dataStr = JSON.stringify(action.params);
 
   // CRITICAL: Object literal key order determines JSON.stringify output
   return {

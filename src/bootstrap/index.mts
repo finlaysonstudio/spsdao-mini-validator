@@ -43,6 +43,7 @@ export async function bootstrap(
     account: ci.account,
     block_num: ci.block_num ?? ci.last_check_in_block_num ?? 0,
     hash: ci.hash ?? "",
+    status: ci.status ?? "active",
   }));
   state.checkIns.load(checkIns);
 

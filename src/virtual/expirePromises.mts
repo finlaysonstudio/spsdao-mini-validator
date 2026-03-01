@@ -25,7 +25,7 @@ export function generateExpirePromises(
     {
       action: {
         name: "expire_promises",
-        players: ["$SYSTEM"],
+        players: ["$PROMISE_EXPIRATION"],
         params: { count: expired.length },
         trxId: `sl_expire_promises_${blockNum}`,
         opIndex: 0,

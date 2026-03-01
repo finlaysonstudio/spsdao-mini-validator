@@ -109,11 +109,9 @@ async function main() {
       if (!verification.match) {
         console.error(`\nHALTING: Hash mismatch at block ${blockNum}`);
         console.error(`  Transactions in block: ${allTransactions.length}`);
-        if (allTransactions.length > 0) {
-          console.error(
-            `  First tx: ${JSON.stringify(allTransactions[0]).slice(0, 200)}`,
-          );
-        }
+        console.error(
+          `  All transactions:\n${JSON.stringify(allTransactions, null, 2)}`,
+        );
         process.exit(1);
       }
       consecutiveMatches++;

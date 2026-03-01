@@ -45,6 +45,7 @@ export function handleCheckInValidator(
     account: player,
     block_num: ctx.blockNum,
     hash,
+    status: "active",
   });
 
   return successResult([

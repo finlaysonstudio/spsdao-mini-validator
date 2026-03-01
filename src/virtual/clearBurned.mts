@@ -6,7 +6,7 @@ import type { OperationResult, EventLog } from "../types.mjs";
 export function generateClearBurned(
   state: StateStore,
   blockNum: number,
-  blockTime: Date,
+  _blockTime: Date,
 ): { action: ParsedAction; result: OperationResult }[] {
   const nullBalances = state.balances.getAll("$NULL");
   const results: { action: ParsedAction; result: OperationResult }[] = [];
@@ -26,9 +26,9 @@ export function generateClearBurned(
     results.push({
       action: {
         name: "burn",
-        players: ["$NULL"],
+        players: ["$BURNED"],
         params: { token, qty: round3(amount) },
-        trxId: `clear_burned_${blockNum}@${blockTime.toISOString()}`,
+        trxId: `sl_clear_burned_tokens_${blockNum}`,
         opIndex: 0,
         actionIndex: results.length,
       },

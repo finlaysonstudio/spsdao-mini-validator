@@ -53,7 +53,7 @@ export function generateExpireCheckIns(
       }
     }
 
-    state.checkIns.remove(checkIn.account);
+    state.checkIns.setInactive(checkIn.account);
 
     events.push({
       type: "expire_check_in",
@@ -65,8 +65,8 @@ export function generateExpireCheckIns(
     {
       action: {
         name: "expire_check_ins",
-        players: ["$SYSTEM"],
-        params: { count: expired.length },
+        players: ["$LICENSE_MANAGER"],
+        params: {},
         trxId: `sl_expire_check_ins_${blockNum}`,
         opIndex: 0,
         actionIndex: 0,
