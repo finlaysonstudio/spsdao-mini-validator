@@ -41,10 +41,10 @@ export function parseBlockActions(
     const txId = transactionIds[txIdx];
 
     for (let opIdx = 0; opIdx < tx.operations.length; opIdx++) {
-      const [opType, opBody] = tx.operations[opIdx];
+      const op = tx.operations[opIdx];
 
-      if (opType === "custom_json") {
-        const customJson = opBody as unknown as CustomJsonOp;
+      if (op.type === "custom_json_operation") {
+        const customJson = op.value as unknown as CustomJsonOp;
         const parsed = parseCustomJson(customJson, txId, opIdx);
         actions.push(...parsed);
       }

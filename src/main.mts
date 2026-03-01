@@ -79,9 +79,9 @@ async function main() {
 
     // 3. Handle create_claimed_account operations (upsert into hive_accounts)
     for (const tx of block.transactions) {
-      for (const [opType, opBody] of tx.operations) {
-        if (opType === "create_claimed_account") {
-          const newAccount = (opBody as { new_account_name?: string })
+      for (const op of tx.operations) {
+        if (op.type === "create_claimed_account_operation") {
+          const newAccount = (op.value as { new_account_name?: string })
             .new_account_name;
           if (newAccount) {
             state.hiveAccounts.add(newAccount);

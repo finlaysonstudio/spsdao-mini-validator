@@ -7,7 +7,7 @@ export interface HiveTransaction {
   ref_block_num: number;
   ref_block_prefix: number;
   expiration: string;
-  operations: [string, Record<string, unknown>][];
+  operations: HiveOperation[];
   extensions: unknown[];
   signatures: string[];
 }

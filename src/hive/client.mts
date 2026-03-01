@@ -13,9 +13,9 @@ function rotateNode(): void {
 
 async function rpcCall<T>(
   method: string,
-  params: Record<string, unknown>,
+  params: unknown,
 ): Promise<T> {
-  const maxAttempts = config.rpcNodes.length;
+  const maxAttempts = config.rpcNodes.length * 2;
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -67,7 +67,7 @@ export async function getHeadBlockNum(): Promise<number> {
   const result = await rpcCall<{
     head_block_number?: number;
     last_irreversible_block_num?: number;
-  }>("condenser_api.get_dynamic_global_properties", {});
+  }>("condenser_api.get_dynamic_global_properties", []);
 
   if (config.blocksHeadMode === "irreversible") {
     return (result.last_irreversible_block_num ?? 0) - config.blocksBehindHead;
