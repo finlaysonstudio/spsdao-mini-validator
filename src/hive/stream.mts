@@ -10,7 +10,7 @@ function sleep(ms: number): Promise<void> {
 
 export async function* streamBlocks(
   startBlock: number,
-): AsyncGenerator<{ block: HiveBlock; blockNum: number }> {
+): AsyncGenerator<{ block: HiveBlock; blockNum: number; nearHead: boolean }> {
   let nextBlock = startBlock;
 
   while (true) {
@@ -33,7 +33,7 @@ export async function* streamBlocks(
         if (!block) {
           throw new Error(`Missing block ${nextBlock + i}`);
         }
-        yield { block, blockNum: nextBlock + i };
+        yield { block, blockNum: nextBlock + i, nearHead: false };
       }
       nextBlock += blocks.length;
     } else {
@@ -43,7 +43,7 @@ export async function* streamBlocks(
         await sleep(POLL_INTERVAL_MS);
         continue;
       }
-      yield { block, blockNum: nextBlock };
+      yield { block, blockNum: nextBlock, nearHead: true };
       nextBlock++;
     }
   }

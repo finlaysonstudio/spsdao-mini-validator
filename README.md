@@ -1,6 +1,6 @@
 # SPS Mini Validator
 
-A lightweight, read-only observer that replays the [Splinterlands SPS](https://github.com/TheSPSDAO/SPS-Validator) layer-2 blockchain and independently verifies L2 block hashes — proving the chain's integrity without running the full validator.
+A lightweight validator that replays the [Splinterlands SPS](https://github.com/TheSPSDAO/SPS-Validator) layer-2 blockchain and independently verifies L2 block hashes. Optionally participates as an active validator — checking in and validating blocks on behalf of one or more accounts.
 
 ## Motivation
 
@@ -94,6 +94,25 @@ Requires a `seed.json` in the project root (or set `SEED_FILE`).
 | `BLOCKS_BEHIND_HEAD` | `5` | How far behind head to stream |
 | `BLOCKS_HEAD_MODE` | `irreversible` | `irreversible` or `head` |
 | `REPLAY_BATCH_SIZE` | `25` | Parallel block fetch count |
+| `VALIDATORS` | _(empty)_ | Comma-separated `account:postingKey` pairs for active validation |
+
+### Multi-Account Validator Mode
+
+When `VALIDATORS` is set, the mini validator actively participates on-chain:
+
+```bash
+# Single account
+VALIDATORS='myaccount:5JpostingKeyWIF...' npm run dev
+
+# Multiple accounts
+VALIDATORS='account1:5Jkey1...,account2:5Jkey2...' npm run dev
+```
+
+For each configured account, the validator will:
+- **Check in** automatically when the account's check-in expires or is missing
+- **Validate blocks** when the account is selected as the block validator via weighted PRNG
+
+Broadcasts only happen when the node is near the chain head (not during catch-up replay). Posting keys are validated at startup — invalid WIF keys cause an immediate error.
 
 ### Scripts
 
@@ -142,11 +161,12 @@ src/
 ├── config.mts               # Environment variable configuration
 ├── types.mts                # Shared type definitions
 ├── bootstrap/               # Seed file loading and state initialization
-├── hive/                    # RPC client and block streaming
+├── hive/                    # RPC client, block streaming, and broadcast
 ├── hash/                    # L2 hash computation and transaction building
 ├── operations/              # Blockchain operation parsing and handlers
 │   └── handlers/            # Individual operation type handlers
 ├── state/                   # In-memory state stores (balances, validators, etc.)
+├── validator/               # Active validator participation (check-in, validation)
 ├── virtual/                 # Virtual operation generators
 └── verify/                  # Hash comparison and logging
 ```

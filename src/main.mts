@@ -1,3 +1,4 @@
+import { PrivateKey } from "@hiveio/dhive";
 import { config } from "./config.mjs";
 import { StateStore } from "./state/index.mjs";
 import { bootstrap } from "./bootstrap/index.mjs";
@@ -8,6 +9,7 @@ import { runVirtualOperations } from "./virtual/index.mjs";
 import { buildTransactionEntity } from "./hash/transaction.mjs";
 import { computeL2Hash } from "./hash/index.mjs";
 import { verifyHash, logVerifyResult } from "./verify/index.mjs";
+import { afterBlock } from "./validator/index.mjs";
 import type { TransactionEntity } from "./types.mjs";
 import type { ActionContext } from "./operations/types.mjs";
 
@@ -20,15 +22,25 @@ async function main() {
     config.seedFile,
   );
 
+  // Validate posting keys at startup
+  for (const v of config.validators) {
+    PrivateKey.fromString(v.postingKey); // throws if invalid WIF
+  }
+
   let currentPrevL2Hash = prevL2Hash;
   let blocksProcessed = 0;
   let consecutiveMatches = 0;
 
   console.log(`Starting from block ${startBlock}`);
   console.log(`RPC nodes: ${config.rpcNodes.join(", ")}`);
+  if (config.validators.length > 0) {
+    console.log(
+      `Validator accounts: ${config.validators.map((v) => v.account).join(", ")}`,
+    );
+  }
   console.log("");
 
-  for await (const { block, blockNum } of streamBlocks(startBlock)) {
+  for await (const { block, blockNum, nearHead } of streamBlocks(startBlock)) {
     const blockTime = new Date(block.timestamp + "Z");
 
     const ctx: ActionContext = {
@@ -102,7 +114,18 @@ async function main() {
       l2_block_id: l2Hash,
     });
 
-    // 6. Verify against known hashes
+    // 6. Active validator participation (only near head)
+    if (nearHead) {
+      afterBlock({
+        state,
+        blockNum,
+        blockId: block.block_id,
+        prevBlockId: block.previous,
+        l2Hash,
+      });
+    }
+
+    // 7. Verify against known hashes
     const verification = verifyHash(blockNum, l2Hash, knownHashes);
     if (verification) {
       logVerifyResult(verification);
