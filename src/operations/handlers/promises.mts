@@ -1,7 +1,12 @@
 import { round3 } from "../../state/index.mjs";
 import type { OperationResult } from "../../types.mjs";
 import type { ParsedAction, ActionContext } from "../types.mjs";
-import { successResult, errorResult, balanceEvent } from "../types.mjs";
+import { successResult, errorResult } from "../types.mjs";
+import {
+  addBalance,
+  subtractBalance,
+  combineBalanceEvents,
+} from "../balanceOps.mjs";
 
 export function handleCreatePromise(
   action: ParsedAction,
@@ -40,7 +45,11 @@ export function handleCreatePromise(
   });
 
   return successResult([
-    { type: "create_promise", data: { id, promise_type: type } },
+    {
+      object_type: "promises",
+      event_type: "insert",
+      data: { id, promise_type: type },
+    },
   ]);
 }
 
@@ -64,25 +73,29 @@ export function handleFulfillPromise(
   promise.fulfilled_by = player;
   ctx.state.promises.set(promise);
 
-  const events = [];
+  const otherEvents = [
+    {
+      object_type: "promises",
+      event_type: "update",
+      data: { id, fulfilled_by: player },
+    },
+  ];
 
   // Handle token escrow if applicable
   const { token, qty } = promise.params as { token?: string; qty?: number };
   if (token && qty) {
     const amount = round3(qty);
-    if (!ctx.state.balances.subtract(player, token, amount)) {
+    const sub = subtractBalance(ctx, player, token, amount);
+    if (!sub) {
       promise.status = "open";
       promise.fulfilled_by = undefined;
       ctx.state.promises.set(promise);
       return errorResult(3, "Insufficient balance for fulfillment");
     }
-    events.push(balanceEvent(player, token, -amount));
+    return successResult(combineBalanceEvents(otherEvents, sub));
   }
 
-  return successResult([
-    { type: "fulfill_promise", data: { id, fulfilled_by: player } },
-    ...events,
-  ]);
+  return successResult(otherEvents);
 }
 
 export function handleFulfillPromiseMulti(
@@ -106,7 +119,8 @@ export function handleFulfillPromiseMulti(
     ctx.state.promises.set(promise);
 
     events.push({
-      type: "fulfill_promise",
+      object_type: "promises",
+      event_type: "update",
       data: { id, fulfilled_by: player },
     });
   }
@@ -132,15 +146,18 @@ export function handleCompletePromise(
   promise.status = "completed";
   ctx.state.promises.set(promise);
 
-  const events = [];
+  const otherEvents = [
+    { object_type: "promises", event_type: "update", data: { id } },
+  ];
+
   const { token, qty } = promise.params as { token?: string; qty?: number };
   if (token && qty && promise.fulfilled_by) {
     const amount = round3(qty);
-    ctx.state.balances.add(promise.controller, token, amount);
-    events.push(balanceEvent(promise.controller, token, amount));
+    const add = addBalance(ctx, promise.controller, token, amount);
+    return successResult(combineBalanceEvents(otherEvents, add));
   }
 
-  return successResult([{ type: "complete_promise", data: { id } }, ...events]);
+  return successResult(otherEvents);
 }
 
 export function handleCancelPromise(
@@ -161,7 +178,9 @@ export function handleCancelPromise(
   promise.status = "cancelled";
   ctx.state.promises.set(promise);
 
-  return successResult([{ type: "cancel_promise", data: { id } }]);
+  return successResult([
+    { object_type: "promises", event_type: "update", data: { id } },
+  ]);
 }
 
 export function handleReversePromise(
@@ -182,13 +201,16 @@ export function handleReversePromise(
   promise.status = "reversed";
   ctx.state.promises.set(promise);
 
-  const events = [];
+  const otherEvents = [
+    { object_type: "promises", event_type: "update", data: { id } },
+  ];
+
   const { token, qty } = promise.params as { token?: string; qty?: number };
   if (token && qty && promise.fulfilled_by) {
     const amount = round3(qty);
-    ctx.state.balances.add(promise.fulfilled_by, token, amount);
-    events.push(balanceEvent(promise.fulfilled_by, token, amount));
+    const add = addBalance(ctx, promise.fulfilled_by, token, amount);
+    return successResult(combineBalanceEvents(otherEvents, add));
   }
 
-  return successResult([{ type: "reverse_promise", data: { id } }, ...events]);
+  return successResult(otherEvents);
 }

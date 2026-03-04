@@ -16,7 +16,8 @@ export function generateExpirePromises(
     promise.status = "cancelled";
     state.promises.set(promise);
     events.push({
-      type: "expire_promise",
+      object_type: "promises",
+      event_type: "update",
       data: { id: promise.id },
     });
   }

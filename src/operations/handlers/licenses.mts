@@ -1,6 +1,11 @@
 import type { OperationResult } from "../../types.mjs";
 import type { ParsedAction, ActionContext } from "../types.mjs";
-import { successResult, errorResult, balanceEvent } from "../types.mjs";
+import { successResult, errorResult } from "../types.mjs";
+import {
+  addBalance,
+  subtractBalance,
+  combineBalanceEvents,
+} from "../balanceOps.mjs";
 
 export function handleActivateLicense(
   action: ParsedAction,
@@ -19,13 +24,10 @@ export function handleActivateLicense(
     return errorResult(3, "Insufficient LICENSE balance");
   }
 
-  ctx.state.balances.subtract(player, "LICENSE", amount);
-  ctx.state.balances.add(player, "ACTIVATED_LICENSE", amount);
+  const sub = subtractBalance(ctx, player, "LICENSE", amount)!;
+  const add = addBalance(ctx, player, "ACTIVATED_LICENSE", amount);
 
-  return successResult([
-    balanceEvent(player, "LICENSE", -amount),
-    balanceEvent(player, "ACTIVATED_LICENSE", amount),
-  ]);
+  return successResult(combineBalanceEvents([], sub, add));
 }
 
 export function handleDeactivateLicense(
@@ -45,11 +47,8 @@ export function handleDeactivateLicense(
     return errorResult(3, "Insufficient ACTIVATED_LICENSE balance");
   }
 
-  ctx.state.balances.subtract(player, "ACTIVATED_LICENSE", amount);
-  ctx.state.balances.add(player, "LICENSE", amount);
+  const sub = subtractBalance(ctx, player, "ACTIVATED_LICENSE", amount)!;
+  const add = addBalance(ctx, player, "LICENSE", amount);
 
-  return successResult([
-    balanceEvent(player, "ACTIVATED_LICENSE", -amount),
-    balanceEvent(player, "LICENSE", amount),
-  ]);
+  return successResult(combineBalanceEvents([], sub, add));
 }

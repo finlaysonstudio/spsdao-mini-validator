@@ -1,7 +1,8 @@
 import { round3 } from "../state/index.mjs";
 import type { StateStore } from "../state/index.mjs";
 import type { ParsedAction } from "../operations/types.mjs";
-import type { OperationResult, EventLog } from "../types.mjs";
+import type { OperationResult } from "../types.mjs";
+import { addBalance, combineBalanceEvents } from "../operations/balanceOps.mjs";
 
 const UNSTAKE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
 
@@ -24,8 +25,18 @@ export function generateTokenUnstaking(
       continue;
     }
 
+    const trxId = `sl_token_unstaking_${blockNum}`;
+    const balCtx = {
+      state,
+      blockTime,
+      blockNum,
+      trxId,
+      actionType: "token_unstaking",
+    };
+
     // Credit liquid tokens
-    state.balances.add(record.player, record.token, amount);
+    const add = addBalance(balCtx, record.player, record.token, amount);
+    const events = combineBalanceEvents([], add);
     record.quantity_left = round3(record.quantity_left - amount);
 
     if (record.quantity_left <= 0) {
@@ -38,13 +49,6 @@ export function generateTokenUnstaking(
 
     state.unstaking.set(record);
 
-    const events: EventLog[] = [
-      {
-        type: "balance_update",
-        data: { player: record.player, token: record.token, amount },
-      },
-    ];
-
     results.push({
       action: {
         name: "token_unstaking",
@@ -54,7 +58,7 @@ export function generateTokenUnstaking(
           qty: amount,
           unstake_tx: record.unstake_tx,
         },
-        trxId: `sl_token_unstaking_${blockNum}`,
+        trxId,
         opIndex: 0,
         actionIndex: results.length,
       },

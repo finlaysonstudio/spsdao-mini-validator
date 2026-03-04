@@ -49,6 +49,10 @@ export function handleCheckInValidator(
   });
 
   return successResult([
-    { type: "check_in", data: { account: player, block_num: ctx.blockNum } },
+    {
+      object_type: "check_ins",
+      event_type: "update",
+      data: { account: player, block_num: ctx.blockNum },
+    },
   ]);
 }

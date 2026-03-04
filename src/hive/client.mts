@@ -11,10 +11,7 @@ function rotateNode(): void {
   currentNodeIndex = (currentNodeIndex + 1) % config.rpcNodes.length;
 }
 
-async function rpcCall<T>(
-  method: string,
-  params: unknown,
-): Promise<T> {
+async function rpcCall<T>(method: string, params: unknown): Promise<T> {
   const maxAttempts = config.rpcNodes.length * 2;
   let lastError: Error | null = null;
 

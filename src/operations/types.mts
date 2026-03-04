@@ -7,12 +7,14 @@ export interface ActionContext {
   blockTime: Date;
   blockId: string;
   prevBlockId: string;
+  trxId: string;
+  actionType: string;
 }
 
 export type OperationHandler = (
   action: ParsedAction,
   ctx: ActionContext,
-) => OperationResult;
+) => OperationResult | null;
 
 export interface ParsedAction {
   name: string;
@@ -32,17 +34,5 @@ export function errorResult(code: number, message?: string): OperationResult {
     success: false,
     error: { code, message },
     events: [],
-  };
-}
-
-export function balanceEvent(
-  player: string,
-  token: string,
-  amount: number,
-  type: string = "balance_update",
-): EventLog {
-  return {
-    type,
-    data: { player, token, amount },
   };
 }

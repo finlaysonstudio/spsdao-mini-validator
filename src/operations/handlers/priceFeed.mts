@@ -32,7 +32,8 @@ export function handlePriceFeed(
 
   return successResult([
     {
-      type: "price_feed",
+      object_type: "price_history",
+      event_type: "insert",
       data: { validator: player, token, price: token_price },
     },
   ]);

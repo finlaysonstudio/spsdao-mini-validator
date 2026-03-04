@@ -1,7 +1,8 @@
 import { round3 } from "../../state/index.mjs";
 import type { OperationResult } from "../../types.mjs";
 import type { ParsedAction, ActionContext } from "../types.mjs";
-import { successResult, errorResult, balanceEvent } from "../types.mjs";
+import { successResult, errorResult } from "../types.mjs";
+import { addBalance, combineBalanceEvents } from "../balanceOps.mjs";
 
 export function handleClaimStakingRewards(
   action: ParsedAction,
@@ -42,12 +43,12 @@ export function handleClaimStakingRewards(
     return successResult([]);
   }
 
-  ctx.state.balances.add(player, token, pending);
+  const add = addBalance(ctx, player, token, pending);
   ctx.state.pools.setRewardDebt(
     player,
     stakingPool.name,
     round3(totalStaked * accPerShare),
   );
 
-  return successResult([balanceEvent(player, token, pending)]);
+  return successResult(combineBalanceEvents([], add));
 }

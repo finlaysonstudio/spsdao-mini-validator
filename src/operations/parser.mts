@@ -62,8 +62,11 @@ function parseCustomJson(
   const { id, json: rawJson, required_auths, required_posting_auths } = op;
 
   // Check if this is an SPS operation
-  const isPrefixFormat = id.startsWith(config.customJsonPrefix);
-  const isIdFormat = id === config.customJsonId;
+  // "sm_sps" is the prefixed alias for ID format, not prefix format
+  const isIdFormat =
+    id === config.customJsonId ||
+    id === config.customJsonPrefix + config.customJsonId;
+  const isPrefixFormat = !isIdFormat && id.startsWith(config.customJsonPrefix);
 
   if (!isPrefixFormat && !isIdFormat) return [];
 

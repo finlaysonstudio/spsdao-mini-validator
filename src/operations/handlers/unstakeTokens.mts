@@ -1,7 +1,12 @@
 import { round3 } from "../../state/index.mjs";
 import type { OperationResult } from "../../types.mjs";
 import type { ParsedAction, ActionContext } from "../types.mjs";
-import { successResult, errorResult, balanceEvent } from "../types.mjs";
+import { successResult, errorResult } from "../types.mjs";
+import {
+  addBalance,
+  subtractBalance,
+  combineBalanceEvents,
+} from "../balanceOps.mjs";
 
 const UNSTAKE_PERIODS = 4;
 const UNSTAKE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
@@ -23,7 +28,8 @@ export function handleUnstakeTokens(
   const amount = round3(qty);
   const stakeToken = `${token}P`;
 
-  if (!ctx.state.balances.subtract(player, stakeToken, amount)) {
+  const sub = subtractBalance(ctx, player, stakeToken, amount);
+  if (!sub) {
     return errorResult(3, "Insufficient staked balance");
   }
 
@@ -43,7 +49,7 @@ export function handleUnstakeTokens(
     is_active: true,
   });
 
-  return successResult([balanceEvent(player, stakeToken, -amount)]);
+  return successResult(combineBalanceEvents([], sub));
 }
 
 export function handleCancelUnstakeTokens(
@@ -63,12 +69,11 @@ export function handleCancelUnstakeTokens(
   }
 
   const stakeToken = `${record.token}P`;
-  ctx.state.balances.add(player, stakeToken, record.quantity_left);
+  const refundAmount = record.quantity_left;
+  const add = addBalance(ctx, player, stakeToken, refundAmount);
   record.is_active = false;
   record.quantity_left = 0;
   ctx.state.unstaking.set(record);
 
-  return successResult([
-    balanceEvent(player, stakeToken, record.quantity_left),
-  ]);
+  return successResult(combineBalanceEvents([], add));
 }

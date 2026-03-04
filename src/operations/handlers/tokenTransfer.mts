@@ -1,7 +1,12 @@
 import { round3 } from "../../state/index.mjs";
 import type { OperationResult } from "../../types.mjs";
 import type { ParsedAction, ActionContext } from "../types.mjs";
-import { successResult, errorResult, balanceEvent } from "../types.mjs";
+import { successResult, errorResult } from "../types.mjs";
+import {
+  addBalance,
+  subtractBalance,
+  combineBalanceEvents,
+} from "../balanceOps.mjs";
 
 export function handleTokenTransfer(
   action: ParsedAction,
@@ -23,16 +28,14 @@ export function handleTokenTransfer(
   }
 
   const amount = round3(qty);
-  if (!ctx.state.balances.subtract(from, token, amount)) {
+  const sub = subtractBalance(ctx, from, token, amount, to);
+  if (!sub) {
     return errorResult(3, "Insufficient balance");
   }
 
-  ctx.state.balances.add(to, token, amount);
+  const add = addBalance(ctx, to, token, amount, from);
 
-  return successResult([
-    balanceEvent(from, token, -amount),
-    balanceEvent(to, token, amount),
-  ]);
+  return successResult(combineBalanceEvents([], sub, add));
 }
 
 export function handleTokenTransferMulti(
@@ -50,9 +53,7 @@ export function handleTokenTransferMulti(
     return errorResult(1, "Invalid multi-transfer params");
   }
 
-  const events = [];
   let totalAmount = 0;
-
   for (const q of qty) {
     totalAmount += round3(q);
   }
@@ -62,14 +63,14 @@ export function handleTokenTransferMulti(
     return errorResult(3, "Insufficient balance");
   }
 
-  ctx.state.balances.subtract(from, token, totalAmount);
-  events.push(balanceEvent(from, token, -totalAmount));
-
-  for (let i = 0; i < to.length; i++) {
-    const amount = round3(qty[i]);
-    ctx.state.balances.add(to[i], token, amount);
-    events.push(balanceEvent(to[i], token, amount));
+  const sub = subtractBalance(ctx, from, token, totalAmount);
+  if (!sub) {
+    return errorResult(3, "Insufficient balance");
   }
 
-  return successResult(events);
+  const adds = to.map((recipient, i) =>
+    addBalance(ctx, recipient, token, round3(qty[i])),
+  );
+
+  return successResult(combineBalanceEvents([], sub, ...adds));
 }

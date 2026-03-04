@@ -1,7 +1,12 @@
 import { round3 } from "../../state/index.mjs";
 import type { OperationResult } from "../../types.mjs";
 import type { ParsedAction, ActionContext } from "../types.mjs";
-import { successResult, errorResult, balanceEvent } from "../types.mjs";
+import { successResult, errorResult } from "../types.mjs";
+import {
+  addBalance,
+  subtractBalance,
+  combineBalanceEvents,
+} from "../balanceOps.mjs";
 
 export function handleBurn(
   action: ParsedAction,
@@ -18,12 +23,13 @@ export function handleBurn(
   }
 
   const amount = round3(qty);
-  if (!ctx.state.balances.subtract(player, token, amount)) {
+  const sub = subtractBalance(ctx, player, token, amount);
+  if (!sub) {
     return errorResult(3, "Insufficient balance");
   }
 
   // Add to null account to track burns
-  ctx.state.balances.add("$NULL", token, amount);
+  const add = addBalance(ctx, "$NULL", token, amount);
 
-  return successResult([balanceEvent(player, token, -amount)]);
+  return successResult(combineBalanceEvents([], sub, add));
 }

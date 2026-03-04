@@ -1,7 +1,12 @@
 import { round3 } from "../../state/index.mjs";
 import type { OperationResult } from "../../types.mjs";
 import type { ParsedAction, ActionContext } from "../types.mjs";
-import { successResult, errorResult, balanceEvent } from "../types.mjs";
+import { successResult, errorResult } from "../types.mjs";
+import {
+  addBalance,
+  subtractBalance,
+  combineBalanceEvents,
+} from "../balanceOps.mjs";
 
 export function handleDelegateTokens(
   action: ParsedAction,
@@ -25,13 +30,14 @@ export function handleDelegateTokens(
   const amount = round3(qty);
   const stakeToken = `${token}P`;
 
-  if (!ctx.state.balances.subtract(from, stakeToken, amount)) {
+  const sub = subtractBalance(ctx, from, stakeToken, amount);
+  if (!sub) {
     return errorResult(3, "Insufficient staked balance");
   }
 
   // Track delegation via IN/OUT tokens
-  ctx.state.balances.add(from, `${stakeToken}-OUT`, amount);
-  ctx.state.balances.add(to, `${stakeToken}-IN`, amount);
+  const out = addBalance(ctx, from, `${stakeToken}-OUT`, amount);
+  const inn = addBalance(ctx, to, `${stakeToken}-IN`, amount);
 
   // Update or create delegation record
   const existing = ctx.state.delegations.get(from, to, token);
@@ -45,11 +51,7 @@ export function handleDelegateTokens(
     last_delegation_tx: action.trxId,
   });
 
-  return successResult([
-    balanceEvent(from, stakeToken, -amount),
-    balanceEvent(from, `${stakeToken}-OUT`, amount),
-    balanceEvent(to, `${stakeToken}-IN`, amount),
-  ]);
+  return successResult(combineBalanceEvents([], sub, out, inn));
 }
 
 export function handleUndelegateTokens(
@@ -78,8 +80,8 @@ export function handleUndelegateTokens(
   }
 
   const stakeToken = `${token}P`;
-  ctx.state.balances.subtract(delegator, `${stakeToken}-OUT`, amount);
-  ctx.state.balances.subtract(delegatee, `${stakeToken}-IN`, amount);
+  const out = subtractBalance(ctx, delegator, `${stakeToken}-OUT`, amount)!;
+  const inn = subtractBalance(ctx, delegatee, `${stakeToken}-IN`, amount)!;
 
   delegation.amount = round3(delegation.amount - amount);
   delegation.last_undelegation_date = ctx.blockTime;
@@ -91,13 +93,9 @@ export function handleUndelegateTokens(
   }
 
   // Staked tokens go back to delegator
-  ctx.state.balances.add(delegator, stakeToken, amount);
+  const add = addBalance(ctx, delegator, stakeToken, amount);
 
-  return successResult([
-    balanceEvent(delegator, `${stakeToken}-OUT`, -amount),
-    balanceEvent(delegatee, `${stakeToken}-IN`, -amount),
-    balanceEvent(delegator, stakeToken, amount),
-  ]);
+  return successResult(combineBalanceEvents([], out, inn, add));
 }
 
 export function handleUndelegateTokensMulti(
@@ -119,8 +117,8 @@ export function handleUndelegateTokensMulti(
     return errorResult(1, "Invalid multi-undelegate params");
   }
 
-  const events = [];
   const stakeToken = `${token}P`;
+  const balResults = [];
 
   for (let i = 0; i < delegatees.length; i++) {
     const delegatee = delegatees[i];
@@ -129,8 +127,8 @@ export function handleUndelegateTokensMulti(
     const delegation = ctx.state.delegations.get(delegator, delegatee, token);
     if (!delegation || delegation.amount < amount) continue;
 
-    ctx.state.balances.subtract(delegator, `${stakeToken}-OUT`, amount);
-    ctx.state.balances.subtract(delegatee, `${stakeToken}-IN`, amount);
+    const out = subtractBalance(ctx, delegator, `${stakeToken}-OUT`, amount)!;
+    const inn = subtractBalance(ctx, delegatee, `${stakeToken}-IN`, amount)!;
 
     delegation.amount = round3(delegation.amount - amount);
     delegation.last_undelegation_date = ctx.blockTime;
@@ -141,16 +139,12 @@ export function handleUndelegateTokensMulti(
       ctx.state.delegations.set(delegation);
     }
 
-    ctx.state.balances.add(delegator, stakeToken, amount);
+    const add = addBalance(ctx, delegator, stakeToken, amount);
 
-    events.push(
-      balanceEvent(delegator, `${stakeToken}-OUT`, -amount),
-      balanceEvent(delegatee, `${stakeToken}-IN`, -amount),
-      balanceEvent(delegator, stakeToken, amount),
-    );
+    balResults.push(out, inn, add);
   }
 
-  return successResult(events);
+  return successResult(combineBalanceEvents([], ...balResults));
 }
 
 export function handleReturnTokens(
@@ -175,8 +169,8 @@ export function handleReturnTokens(
   }
 
   const stakeToken = `${token}P`;
-  ctx.state.balances.subtract(to, `${stakeToken}-OUT`, amount);
-  ctx.state.balances.subtract(delegatee, `${stakeToken}-IN`, amount);
+  const out = subtractBalance(ctx, to, `${stakeToken}-OUT`, amount)!;
+  const inn = subtractBalance(ctx, delegatee, `${stakeToken}-IN`, amount)!;
 
   delegation.amount = round3(delegation.amount - amount);
   if (delegation.amount <= 0) {
@@ -185,11 +179,7 @@ export function handleReturnTokens(
     ctx.state.delegations.set(delegation);
   }
 
-  ctx.state.balances.add(to, stakeToken, amount);
+  const add = addBalance(ctx, to, stakeToken, amount);
 
-  return successResult([
-    balanceEvent(to, `${stakeToken}-OUT`, -amount),
-    balanceEvent(delegatee, `${stakeToken}-IN`, -amount),
-    balanceEvent(to, stakeToken, amount),
-  ]);
+  return successResult(combineBalanceEvents([], out, inn, add));
 }

@@ -26,7 +26,11 @@ export function handleApproveValidator(
   ctx.state.validators.set(validator);
 
   return successResult([
-    { type: "approve_validator", data: { account: account_name } },
+    {
+      object_type: "validators",
+      event_type: "update",
+      data: { account: account_name },
+    },
   ]);
 }
 
@@ -49,7 +53,11 @@ export function handleUnapproveValidator(
   ctx.state.validators.set(validator);
 
   return successResult([
-    { type: "unapprove_validator", data: { account: account_name } },
+    {
+      object_type: "validators",
+      event_type: "update",
+      data: { account: account_name },
+    },
   ]);
 }
 
@@ -75,5 +83,7 @@ export function handleUpdateValidator(
 
   ctx.state.validators.set(validator);
 
-  return successResult([{ type: "update_validator", data: { account } }]);
+  return successResult([
+    { object_type: "validators", event_type: "update", data: { account } },
+  ]);
 }

@@ -34,7 +34,11 @@ export function handleAddPool(
   });
 
   return successResult([
-    { type: "add_pool", data: { name, token, reward_token } },
+    {
+      object_type: "staking_pools",
+      event_type: "insert",
+      data: { name, token, reward_token },
+    },
   ]);
 }
 
@@ -62,7 +66,9 @@ export function handleUpdatePool(
 
   ctx.state.pools.setPool(pool);
 
-  return successResult([{ type: "update_pool", data: { name } }]);
+  return successResult([
+    { object_type: "staking_pools", event_type: "update", data: { name } },
+  ]);
 }
 
 export function handleDisablePool(
@@ -83,5 +89,7 @@ export function handleDisablePool(
   pool.is_active = false;
   ctx.state.pools.setPool(pool);
 
-  return successResult([{ type: "disable_pool", data: { name } }]);
+  return successResult([
+    { object_type: "staking_pools", event_type: "update", data: { name } },
+  ]);
 }

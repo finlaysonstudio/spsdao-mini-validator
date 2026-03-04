@@ -1,5 +1,6 @@
 export interface EventLog {
-  type: string;
+  object_type: string;
+  event_type: string;
   data: Record<string, unknown>;
 }
 
@@ -39,4 +40,6 @@ export interface BlockRef {
   prev_block_id: string;
   block_time: Date;
   l2_block_id: string;
+  validator?: string;
+  validation_tx?: string;
 }

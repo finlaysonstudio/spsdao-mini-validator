@@ -17,13 +17,16 @@ export async function bootstrap(
   const raw = await readFile(seedPath, "utf-8");
   const seed: SeedFile = JSON.parse(raw);
 
+  // Load config first (pools are extracted from config entries)
+  state.config.load(seed.config ?? []);
+
   // Load all state stores
   state.balances.load(seed.balances ?? []);
   state.validators.load(seed.validators ?? []);
   state.delegations.load(seed.active_delegations ?? []);
   state.unstaking.load(seed.token_unstaking ?? []);
+
   state.pools.load(seed.pools ?? [], seed.staking_pool_reward_debt ?? []);
-  state.config.load(seed.config ?? []);
 
   // Promises — normalize from DB format
   const promises = (seed.promises ?? []).map((p) => ({
@@ -76,6 +79,8 @@ export async function bootstrap(
         prev_block_id: rb.prev_block_id,
         block_time: new Date(rb.block_time),
         l2_block_id: rb.l2_block_id,
+        validator: rb.validator,
+        validation_tx: rb.validation_tx,
       });
     }
   }

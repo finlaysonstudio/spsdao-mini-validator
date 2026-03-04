@@ -33,7 +33,8 @@ export function generatePoolClaims(
 
     const events: EventLog[] = [
       {
-        type: "pool_reward",
+        object_type: "staking_pools",
+        event_type: "update",
         data: {
           pool: pool.name,
           reward,

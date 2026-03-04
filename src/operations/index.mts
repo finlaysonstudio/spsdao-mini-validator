@@ -97,16 +97,12 @@ handlers.set("config_update", handleConfigUpdate);
 export function processAction(
   action: ParsedAction,
   ctx: ActionContext,
-): OperationResult {
+): OperationResult | null {
   const handler = handlers.get(action.name);
 
   if (!handler) {
-    // Unknown action — still produces a transaction entity with success=false
-    return {
-      success: false,
-      error: { code: 1, message: `Unknown action: ${action.name}` },
-      events: [],
-    };
+    // Unknown action — skip entirely (no TransactionEntity), matching upstream
+    return null;
   }
 
   return handler(action, ctx);

@@ -6,6 +6,7 @@ export interface Validator {
   total_votes: number;
   missed_blocks: number;
   post_url: string;
+  reward_account?: string;
   block_num?: number;
 }
 
@@ -65,6 +66,7 @@ export class ValidatorStore {
         total_votes: e.total_votes ?? 0,
         missed_blocks: e.missed_blocks ?? 0,
         post_url: e.post_url ?? "",
+        reward_account: e.reward_account,
         block_num: e.block_num,
       });
     }

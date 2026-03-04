@@ -1,11 +1,16 @@
 import type { StateStore } from "../state/index.mjs";
 import type { ParsedAction } from "../operations/types.mjs";
 import type { OperationResult, EventLog } from "../types.mjs";
+import {
+  addBalance,
+  subtractBalance,
+  combineBalanceEvents,
+} from "../operations/balanceOps.mjs";
 
 export function generateExpireCheckIns(
   state: StateStore,
   blockNum: number,
-  _blockTime: Date,
+  blockTime: Date,
 ): { action: ParsedAction; result: OperationResult }[] {
   const intervalBlocks = state.config.getNumber(
     "validator_check_in",
@@ -25,7 +30,17 @@ export function generateExpireCheckIns(
   );
   if (expired.length === 0) return [];
 
-  const events: EventLog[] = [];
+  const trxId = `sl_expire_check_ins_${blockNum}`;
+  const balCtx = {
+    state,
+    blockTime,
+    blockNum,
+    trxId,
+    actionType: "expire_check_ins",
+  };
+
+  const otherEvents: EventLog[] = [];
+  const balResults = [];
 
   for (const checkIn of expired) {
     // Deactivate the validator
@@ -40,26 +55,35 @@ export function generateExpireCheckIns(
         "RUNNING_LICENSE",
       );
       if (runningLicenseBalance > 0) {
-        state.balances.subtract(
+        const sub = subtractBalance(
+          balCtx,
           checkIn.account,
           "RUNNING_LICENSE",
           runningLicenseBalance,
         );
-        state.balances.add(
+        if (sub) {
+          balResults.push(sub);
+        }
+        const add = addBalance(
+          balCtx,
           checkIn.account,
           "ACTIVATED_LICENSE",
           runningLicenseBalance,
         );
+        balResults.push(add);
       }
     }
 
     state.checkIns.setInactive(checkIn.account);
 
-    events.push({
-      type: "expire_check_in",
+    otherEvents.push({
+      object_type: "check_ins",
+      event_type: "update",
       data: { account: checkIn.account },
     });
   }
+
+  const events = combineBalanceEvents(otherEvents, ...balResults);
 
   return [
     {
@@ -67,7 +91,7 @@ export function generateExpireCheckIns(
         name: "expire_check_ins",
         players: ["$LICENSE_MANAGER"],
         params: {},
-        trxId: `sl_expire_check_ins_${blockNum}`,
+        trxId,
         opIndex: 0,
         actionIndex: 0,
       },

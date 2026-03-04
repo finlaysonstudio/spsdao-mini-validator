@@ -43,14 +43,6 @@ async function main() {
   for await (const { block, blockNum, nearHead } of streamBlocks(startBlock)) {
     const blockTime = new Date(block.timestamp + "Z");
 
-    const ctx: ActionContext = {
-      state,
-      blockNum,
-      blockTime,
-      blockId: block.block_id,
-      prevBlockId: block.previous,
-    };
-
     const allTransactions: TransactionEntity[] = [];
     let globalIndex = 0;
 
@@ -75,8 +67,17 @@ async function main() {
       block.transaction_ids,
     );
     for (const action of blockActions) {
-      // Process create_claimed_account — handled in parser as regular ops
+      const ctx: ActionContext = {
+        state,
+        blockNum,
+        blockTime,
+        blockId: block.block_id,
+        prevBlockId: block.previous,
+        trxId: action.trxId,
+        actionType: action.name,
+      };
       const result = processAction(action, ctx);
+      if (result === null) continue; // Unknown action — skip entirely
       const txEntity = buildTransactionEntity(
         action,
         result,

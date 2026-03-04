@@ -1,12 +1,17 @@
 import { round3 } from "../../state/index.mjs";
 import type { OperationResult } from "../../types.mjs";
 import type { ParsedAction, ActionContext } from "../types.mjs";
-import { successResult, errorResult, balanceEvent } from "../types.mjs";
+import { successResult, errorResult } from "../types.mjs";
+import {
+  addBalance,
+  subtractBalance,
+  combineBalanceEvents,
+} from "../balanceOps.mjs";
 
 export function handleStakeTokens(
   action: ParsedAction,
   ctx: ActionContext,
-): OperationResult {
+): OperationResult | null {
   const { token, qty, to } = action.params as {
     token?: string;
     qty?: number;
@@ -14,24 +19,23 @@ export function handleStakeTokens(
   };
   const from = action.players[0];
 
+  // Schema validation: missing required fields → drop action (no TransactionEntity)
   if (!token || qty === undefined || qty <= 0) {
-    return errorResult(1, "Invalid stake params");
+    return null;
   }
 
   const amount = round3(qty);
   const stakeToken = `${token}P`;
   const target = to ?? from;
 
-  if (!ctx.state.balances.subtract(from, token, amount)) {
+  const sub = subtractBalance(ctx, from, token, amount);
+  if (!sub) {
     return errorResult(3, "Insufficient balance");
   }
 
-  ctx.state.balances.add(target, stakeToken, amount);
+  const add = addBalance(ctx, target, stakeToken, amount);
 
-  return successResult([
-    balanceEvent(from, token, -amount),
-    balanceEvent(target, stakeToken, amount),
-  ]);
+  return successResult(combineBalanceEvents([], sub, add));
 }
 
 export function handleStakeTokensMulti(
@@ -55,17 +59,14 @@ export function handleStakeTokensMulti(
     totalAmount += round3(q);
   }
 
-  if (!ctx.state.balances.subtract(from, token, totalAmount)) {
+  const sub = subtractBalance(ctx, from, token, totalAmount);
+  if (!sub) {
     return errorResult(3, "Insufficient balance");
   }
 
-  const events = [balanceEvent(from, token, -totalAmount)];
+  const adds = to.map((recipient, i) =>
+    addBalance(ctx, recipient, stakeToken, round3(qty[i])),
+  );
 
-  for (let i = 0; i < to.length; i++) {
-    const amount = round3(qty[i]);
-    ctx.state.balances.add(to[i], stakeToken, amount);
-    events.push(balanceEvent(to[i], stakeToken, amount));
-  }
-
-  return successResult(events);
+  return successResult(combineBalanceEvents([], sub, ...adds));
 }

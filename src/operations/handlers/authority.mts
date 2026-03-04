@@ -21,7 +21,9 @@ export function handleSetAuthority(
     }
   }
 
-  return successResult([{ type: "set_authority", data: { account_name } }]);
+  return successResult([
+    { object_type: "config", event_type: "update", data: { account_name } },
+  ]);
 }
 
 export function handleConfigUpdate(
@@ -41,6 +43,10 @@ export function handleConfigUpdate(
   ctx.state.config.set(group_name, name, String(value));
 
   return successResult([
-    { type: "config_update", data: { group_name, name, value } },
+    {
+      object_type: "config",
+      event_type: "update",
+      data: { group_name, name, value },
+    },
   ]);
 }
