@@ -377,7 +377,26 @@ async function main() {
     writer.writeKeyArrayStreamed("config", config);
 
     // ------------------------------------------------------------------
-    // 9. Staking pool reward debt — CURSOR STREAMED
+    // 9. Staking pools (table may not exist in all schemas)
+    // ------------------------------------------------------------------
+    console.log("Extracting staking pools...");
+    let pools = [];
+    try {
+      pools = await query(
+        client,
+        `SELECT name, token, reward_token, tokens_per_block::float AS tokens_per_block,
+                start_block, acc_tokens_per_share::float AS acc_tokens_per_share,
+                last_reward_block, is_active
+         FROM staking_pool`,
+      );
+    } catch {
+      console.log("  (staking_pool table not found, skipping)");
+    }
+    console.log(`  ${pools.length} staking pools`);
+    writer.writeKeyArrayStreamed("pools", pools);
+
+    // ------------------------------------------------------------------
+    // 10. Staking pool reward debt — CURSOR STREAMED
     // ------------------------------------------------------------------
     console.log("Extracting staking pool reward debt...");
     await streamQueryToArray(
@@ -502,3 +521,4 @@ main().catch((err) => {
   console.error("Fatal:", err.message);
   process.exit(1);
 });
+

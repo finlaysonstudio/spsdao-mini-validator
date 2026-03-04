@@ -3,10 +3,12 @@ import seedrandom from "seedrandom";
 export interface Validator {
   account_name: string;
   is_active: boolean;
+  post_url: string | null;
+  api_url: string | null;
   total_votes: number;
   missed_blocks: number;
-  post_url: string;
-  reward_account?: string;
+  reward_account: string | null;
+  last_version: string | null;
   block_num?: number;
 }
 
@@ -63,10 +65,12 @@ export class ValidatorStore {
       this.set({
         account_name: e.account_name,
         is_active: e.is_active ?? false,
+        post_url: e.post_url ?? null,
+        api_url: e.api_url ?? null,
         total_votes: e.total_votes ?? 0,
         missed_blocks: e.missed_blocks ?? 0,
-        post_url: e.post_url ?? "",
-        reward_account: e.reward_account,
+        reward_account: e.reward_account ?? null,
+        last_version: e.last_version ?? null,
         block_num: e.block_num,
       });
     }

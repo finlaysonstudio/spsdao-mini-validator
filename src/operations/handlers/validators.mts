@@ -17,9 +17,12 @@ export function handleApproveValidator(
     validator = {
       account_name,
       is_active: true,
+      post_url: null,
+      api_url: null,
       total_votes: 0,
       missed_blocks: 0,
-      post_url: "",
+      reward_account: null,
+      last_version: null,
     };
   }
   validator.is_active = true;

@@ -9,6 +9,10 @@ export class ConfigStore {
     return this.entries.get(configKey(group, name));
   }
 
+  getString(group: string, name: string, fallback: string): string {
+    return this.get(group, name) ?? fallback;
+  }
+
   getNumber(group: string, name: string, fallback: number): number {
     const v = this.get(group, name);
     if (v === undefined) return fallback;
