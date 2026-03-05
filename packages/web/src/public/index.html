@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SPS Block Navigator</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>SPS Block Navigator</h1>
+    <div id="status">Bootstrapping...</div>
+  </header>
+
+  <div class="nav">
+    <input type="number" id="block-input" placeholder="Block #" readonly>
+    <button class="primary" id="btn-next" onclick="nextBlock()" disabled>Next</button>
+    <span id="nav-info"></span>
+  </div>
+
+  <main id="content">
+    <div class="loading">
+      <span class="spinner"></span>
+      Bootstrapping validator...
+    </div>
+  </main>
+
+  <script src="/app.mjs"></script>
+</body>
+</html>

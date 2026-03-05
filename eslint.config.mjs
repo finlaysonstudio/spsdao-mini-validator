@@ -10,6 +10,22 @@ export default [
     },
   },
   {
+    files: ["**/public/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        document: "readonly",
+        fetch: "readonly",
+        window: "readonly",
+        console: "readonly",
+        setInterval: "readonly",
+        setTimeout: "readonly",
+        Map: "readonly",
+        JSON: "readonly",
+        Date: "readonly",
+      },
+    },
+  },
+  {
     ignores: ["scripts/**"],
   },
 ];

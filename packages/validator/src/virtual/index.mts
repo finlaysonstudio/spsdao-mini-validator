@@ -15,30 +15,43 @@ type VirtualSource = (
   blockTime: Date,
 ) => { action: ParsedAction; result: OperationResult }[];
 
+interface NamedVirtualSource {
+  name: string;
+  fn: VirtualSource;
+}
+
 /**
  * Virtual operation sources in exact registration order.
  * This order is critical for hash determinism.
  */
-const VIRTUAL_SOURCES: VirtualSource[] = [
-  generateTokenUnstaking, // 1. token_unstaking
-  generatePoolClaims, // 2. claim_pool
-  generateClearBurned, // 3. burn
-  generateExpirePromises, // 4. expire_promises
-  generateExpireCheckIns, // 5. expire_check_ins
-  generateUpdateMissedBlocks, // 6. update_missed_blocks
-  generateTransitions, // 7. transition_* ops
+const VIRTUAL_SOURCES: NamedVirtualSource[] = [
+  { name: "tokenUnstaking", fn: generateTokenUnstaking }, // 1. token_unstaking
+  { name: "poolClaims", fn: generatePoolClaims }, // 2. claim_pool
+  { name: "clearBurned", fn: generateClearBurned }, // 3. burn
+  { name: "expirePromises", fn: generateExpirePromises }, // 4. expire_promises
+  { name: "expireCheckIns", fn: generateExpireCheckIns }, // 5. expire_check_ins
+  { name: "updateMissedBlocks", fn: generateUpdateMissedBlocks }, // 6. update_missed_blocks
+  { name: "transitions", fn: generateTransitions }, // 7. transition_* ops
 ];
+
+export interface VirtualOpResult {
+  action: ParsedAction;
+  result: OperationResult;
+  source: string;
+}
 
 export function runVirtualOperations(
   state: StateStore,
   blockNum: number,
   blockTime: Date,
-): { action: ParsedAction; result: OperationResult }[] {
-  const allResults: { action: ParsedAction; result: OperationResult }[] = [];
+): VirtualOpResult[] {
+  const allResults: VirtualOpResult[] = [];
 
-  for (const source of VIRTUAL_SOURCES) {
-    const results = source(state, blockNum, blockTime);
-    allResults.push(...results);
+  for (const { name, fn } of VIRTUAL_SOURCES) {
+    const results = fn(state, blockNum, blockTime);
+    for (const r of results) {
+      allResults.push({ ...r, source: name });
+    }
   }
 
   return allResults;
