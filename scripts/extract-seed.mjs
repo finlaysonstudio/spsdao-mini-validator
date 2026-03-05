@@ -247,7 +247,7 @@ async function main() {
     // 1. Determine snapshot block
     // ------------------------------------------------------------------
     let blockNum;
-    if (args[0]) {
+    if (args[0] && args[0] !== "-" && args[0] !== "latest") {
       blockNum = parseInt(args[0], 10);
     } else {
       const rows = await query(

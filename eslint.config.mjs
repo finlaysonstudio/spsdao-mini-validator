@@ -9,4 +9,7 @@ export default [
       parser: tsParser,
     },
   },
+  {
+    ignores: ["scripts/**"],
+  },
 ];

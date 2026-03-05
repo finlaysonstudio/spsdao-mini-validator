@@ -1,0 +1,32 @@
+{
+  "name": "@spsdao/validator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lightweight SPS validator observer - computes L2 hashes from Hive blocks",
+  "type": "module",
+  "scripts": {
+    "prebuild": "npm run clean",
+    "build": "tsc",
+    "clean": "rimraf dist",
+    "dev": "tsx src/main.mts",
+    "lint": "eslint 'src/**/*.mts'",
+    "sort": "sort-package-json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hiveio/dhive": "^1.3.4",
+    "js-sha256": "^0.11.0",
+    "seedrandom": "^3.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "@types/seedrandom": "^3.0.8",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
