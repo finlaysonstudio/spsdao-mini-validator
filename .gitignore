@@ -9,6 +9,8 @@ dist/
 # Keep config files
 !eslint.config.mjs
 !vitest.config.ts
+!vitest.workspace.ts
+!vite.config.ts
 
 # Env
 .env
@@ -23,4 +25,6 @@ Thumbs.db
 
 # Coverage
 coverage/
+
+# Seed data
 /seed.json
