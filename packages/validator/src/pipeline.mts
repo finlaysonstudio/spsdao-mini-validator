@@ -14,6 +14,12 @@ export interface VirtualOpBreakdown {
   transactions: TransactionEntity[];
 }
 
+export interface ActiveValidatorInfo {
+  account: string;
+  totalVotes: number;
+  votePercent: number;
+}
+
 export interface BlockDetail {
   blockNum: number;
   blockId: string;
@@ -28,6 +34,7 @@ export interface BlockDetail {
   virtualOpBreakdown: VirtualOpBreakdown[];
   selectedValidator: string | null;
   activeValidatorCount: number;
+  activeValidators: ActiveValidatorInfo[];
 }
 
 export function processBlock(
@@ -137,7 +144,17 @@ export function processBlock(
     block.previous,
     minValidators,
   );
-  const activeValidatorCount = state.validators.getActive().length;
+  const activeList = state.validators.getActive();
+  const activeValidatorCount = activeList.length;
+  const totalVotes = activeList.reduce((sum, v) => sum + v.total_votes, 0);
+  const activeValidators: ActiveValidatorInfo[] = activeList.map((v) => ({
+    account: v.account_name,
+    totalVotes: v.total_votes,
+    votePercent:
+      totalVotes > 0
+        ? Math.round((v.total_votes / totalVotes) * 100000) / 1000
+        : 0,
+  }));
 
   // Build breakdown
   const virtualOpBreakdown: VirtualOpBreakdown[] = [];
@@ -163,5 +180,6 @@ export function processBlock(
     virtualOpBreakdown,
     selectedValidator: selected?.account_name ?? null,
     activeValidatorCount,
+    activeValidators,
   };
 }

@@ -130,7 +130,10 @@ function renderBlock(b) {
               : `<span class="validator-none">No validator selected</span>`
             }
           </div>
-          <div class="meta-label">Active Validators: <span class="meta-value">${b.activeValidatorCount}</span></div>
+          <div class="meta-label">Active Validators: <span class="validator-count-toggle" onclick="toggleValidatorList()">${b.activeValidatorCount}</span></div>
+        </div>
+        <div class="validator-list" id="validator-list">
+          ${renderValidatorTable(b.activeValidators, b.selectedValidator)}
         </div>
       </div>
     </div>
@@ -231,6 +234,32 @@ function formatJson(str) {
   } catch {
     return str;
   }
+}
+
+function renderValidatorTable(validators, selectedAccount) {
+  if (!validators || validators.length === 0) return "";
+  const maxPct = validators[0]?.votePercent ?? 1;
+  return `
+    <table>
+      <thead><tr><th>#</th><th>Account</th><th>Vote %</th><th></th></tr></thead>
+      <tbody>
+        ${validators.map((v, i) => {
+          const isSelected = v.account === selectedAccount;
+          const barWidth = Math.max(1, Math.round((v.votePercent / maxPct) * 120));
+          return `<tr class="${isSelected ? "selected" : ""}">
+            <td>${i + 1}</td>
+            <td>${v.account}${isSelected ? " *" : ""}</td>
+            <td class="pct">${v.votePercent.toFixed(3)}%</td>
+            <td><span class="vote-bar" style="width:${barWidth}px"></span></td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function toggleValidatorList() {
+  document.getElementById("validator-list").classList.toggle("open");
 }
 
 // Keyboard: right arrow = next

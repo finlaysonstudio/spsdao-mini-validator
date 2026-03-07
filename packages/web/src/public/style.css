@@ -214,6 +214,68 @@ main {
   font-style: italic;
 }
 
+.validator-count-toggle {
+  cursor: pointer;
+  color: #53d8fb;
+  user-select: none;
+  border-bottom: 1px dashed #53d8fb;
+}
+
+.validator-count-toggle:hover {
+  color: #7bed9f;
+  border-bottom-color: #7bed9f;
+}
+
+.validator-list {
+  display: none;
+  margin-top: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.validator-list.open {
+  display: block;
+}
+
+.validator-list table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "SF Mono", monospace;
+  font-size: 12px;
+}
+
+.validator-list th {
+  text-align: left;
+  color: #888;
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-bottom: 1px solid #0f3460;
+}
+
+.validator-list td {
+  padding: 3px 12px;
+  border-bottom: 1px solid rgba(15, 52, 96, 0.3);
+}
+
+.validator-list tr.selected td {
+  color: #7bed9f;
+  font-weight: 600;
+}
+
+.validator-list .vote-bar {
+  display: inline-block;
+  height: 10px;
+  background: #0f3460;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+.validator-list .pct {
+  color: #f5a623;
+}
+
 /* Transaction tabs */
 .tabs {
   display: flex;
