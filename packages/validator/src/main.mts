@@ -25,6 +25,17 @@ async function main() {
   let blocksProcessed = 0;
   let consecutiveMatches = 0;
 
+  const lastKnownBlock =
+    knownHashes.size > 0 ? Math.max(...knownHashes.keys()) : 0;
+
+  if (config.replayOnly) {
+    if (lastKnownBlock === 0) {
+      console.error("REPLAY_ONLY set but no known hashes in seed — nothing to verify.");
+      process.exit(1);
+    }
+    console.log(`Replay-only mode: will stop after block ${lastKnownBlock}`);
+  }
+
   console.log(`Starting from block ${startBlock}`);
   console.log(`RPC nodes: ${config.rpcNodes.join(", ")}`);
   if (config.validators.length > 0) {
@@ -63,6 +74,13 @@ async function main() {
         process.exit(1);
       }
       consecutiveMatches++;
+
+      if (config.replayOnly && blockNum >= lastKnownBlock) {
+        console.log(
+          `\nReplay complete: ${consecutiveMatches} hash(es) verified through block ${blockNum}`,
+        );
+        process.exit(0);
+      }
     }
 
     currentPrevL2Hash = detail.l2Hash;

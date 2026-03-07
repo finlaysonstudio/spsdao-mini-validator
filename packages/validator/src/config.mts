@@ -47,4 +47,6 @@ export const config = {
   dbBlockRetention: envInt("DB_BLOCK_RETENTION", 0),
 
   seedFile: env("SEED_FILE", "seed.json"),
+
+  replayOnly: env("REPLAY_ONLY", "") !== "",
 };

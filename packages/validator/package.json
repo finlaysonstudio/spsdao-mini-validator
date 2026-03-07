@@ -22,6 +22,7 @@
     "build": "tsc",
     "clean": "rimraf dist",
     "dev": "tsx src/main.mts",
+    "replay": "REPLAY_ONLY=1 tsx src/main.mts",
     "lint": "eslint 'src/**/*.mts'",
     "sort": "sort-package-json",
     "test": "vitest run",
