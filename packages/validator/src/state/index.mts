@@ -463,7 +463,7 @@ export class Rentals {
       .sort((a, b) => a - b);
     const out: RentalRow[] = [];
     for (const b of blocks) {
-      const ids = Array.from(this.byExpiration.get(b)!).sort();
+      const ids = Array.from(this.byExpiration.get(b)!).sort(pgCompare);
       for (const id of ids) out.push(this.active.get(id)!);
     }
     return out;
