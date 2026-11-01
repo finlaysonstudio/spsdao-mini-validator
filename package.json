@@ -9,8 +9,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "clean": "rimraf ./packages/*/dist",
-    "dev": "SEED_FILE=../../seed.json npm run dev --workspace packages/validator",
-    "replay": "SEED_FILE=../../seed.json npm run replay --workspace packages/validator",
+    "dev": "npm run dev --workspace packages/validator",
     "format": "npm run format:package && npm run format:lint",
     "format:lint": "eslint --fix .",
     "format:package": "sort-package-json ./package.json ./packages/*/package.json",
@@ -19,8 +18,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "web": "SEED_FILE=../../seed.json npm run dev --workspace packages/web"
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
     "@jaypie/eslint": "^1.2.2",

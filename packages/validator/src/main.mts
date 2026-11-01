@@ -1,98 +1,38 @@
-import { PrivateKey } from "@hiveio/dhive";
+/**
+ * Observer mode: replay Hive blocks from a seed, compute each L2 block hash,
+ * log it. Nothing is broadcast; no keys are needed.
+ */
+import { appendFileSync } from "node:fs";
 import { config } from "./config.mjs";
-import { StateStore } from "./state/index.mjs";
-import { bootstrap } from "./bootstrap/index.mjs";
+import { BlockProcessor } from "./block/processor.mjs";
+import { loadSeed } from "./bootstrap/seed.mjs";
 import { streamBlocks } from "./hive/stream.mjs";
-import { processBlock } from "./pipeline.mjs";
-import { verifyHash, logVerifyResult } from "./verify/index.mjs";
-import { afterBlock } from "./validator/index.mjs";
+import { Services } from "./services.mjs";
+import { StateStore } from "./state/index.mjs";
+import { log } from "./util/log.mjs";
 
 async function main() {
-  console.log("SPS Mini Validator starting...");
-
+  log(`SPS mini validator (observer) starting; seed=${config.seedFile}`);
   const state = new StateStore();
-  const { startBlock, prevL2Hash, knownHashes } = await bootstrap(
-    state,
-    config.seedFile,
-  );
+  const meta = await loadSeed(state, config.seedFile);
+  const svc = new Services(state, { custom_json_id: config.customJsonId, custom_json_prefix: config.customJsonPrefix });
+  const processor = new BlockProcessor(svc);
 
-  // Validate posting keys at startup
-  for (const v of config.validators) {
-    PrivateKey.fromString(v.postingKey); // throws if invalid WIF
-  }
-
-  let currentPrevL2Hash = prevL2Hash;
-  let blocksProcessed = 0;
-  let consecutiveMatches = 0;
-
-  const lastKnownBlock =
-    knownHashes.size > 0 ? Math.max(...knownHashes.keys()) : 0;
-
-  if (config.replayOnly) {
-    if (lastKnownBlock === 0) {
-      console.error("REPLAY_ONLY set but no known hashes in seed — nothing to verify.");
-      process.exit(1);
+  let prev = meta.l2_block_id;
+  let processed = 0;
+  const started = Date.now();
+  for await (const { block, blockNum, headBlock } of streamBlocks(meta.block_num + 1, config.stopBlock)) {
+    const result = processor.process(blockNum, block, prev);
+    prev = result.l2_block_id;
+    processed++;
+    const line = `${blockNum} ${result.l2_block_id} txs=${result.transactions.length} validator=${result.validator ?? "-"}`;
+    if (headBlock - blockNum < 50 || processed % 100 === 0) {
+      const rate = (processed / ((Date.now() - started) / 1000)).toFixed(1);
+      log(`${line} behind=${headBlock - blockNum} rate=${rate}/s rss=${(process.memoryUsage().rss / 1048576).toFixed(0)}MB`);
     }
-    console.log(`Replay-only mode: will stop after block ${lastKnownBlock}`);
+    if (config.hashLog) appendFileSync(config.hashLog, `${blockNum} ${result.l2_block_id}\n`);
   }
-
-  console.log(`Starting from block ${startBlock}`);
-  console.log(`RPC nodes: ${config.rpcNodes.join(", ")}`);
-  if (config.validators.length > 0) {
-    console.log(
-      `Validator accounts: ${config.validators.map((v) => v.account).join(", ")}`,
-    );
-  }
-  console.log("");
-
-  for await (const { block, blockNum, nearHead } of streamBlocks(startBlock)) {
-    const detail = processBlock(block, blockNum, state, currentPrevL2Hash);
-
-    // Active validator participation (only near head)
-    if (nearHead) {
-      afterBlock({
-        state,
-        blockNum,
-        blockId: block.block_id,
-        prevBlockId: block.previous,
-        l2Hash: detail.l2Hash,
-      });
-    }
-
-    // Verify against known hashes
-    const verification = verifyHash(blockNum, detail.l2Hash, knownHashes);
-    if (verification) {
-      logVerifyResult(verification);
-      if (!verification.match) {
-        console.error(`\nHALTING: Hash mismatch at block ${blockNum}`);
-        console.error(
-          `  Transactions in block: ${detail.allTransactions.length}`,
-        );
-        console.error(
-          `  All transactions:\n${JSON.stringify(detail.allTransactions, null, 2)}`,
-        );
-        process.exit(1);
-      }
-      consecutiveMatches++;
-
-      if (config.replayOnly && blockNum >= lastKnownBlock) {
-        console.log(
-          `\nReplay complete: ${consecutiveMatches} hash(es) verified through block ${blockNum}`,
-        );
-        process.exit(0);
-      }
-    }
-
-    currentPrevL2Hash = detail.l2Hash;
-    blocksProcessed++;
-
-    // Progress logging
-    if (blocksProcessed % 100 === 0) {
-      console.log(
-        `Block ${blockNum} | ${blocksProcessed} processed | ${detail.allTransactions.length} txns | hash: ${detail.l2Hash.slice(0, 12)}... | ${consecutiveMatches} verified`,
-      );
-    }
-  }
+  log(`stopped after block ${meta.block_num + processed}`);
 }
 
 main().catch((err) => {

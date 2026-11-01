@@ -2,19 +2,14 @@
   "name": "@spsdao/validator",
   "version": "0.1.0",
   "private": true,
-  "description": "Lightweight SPS validator observer - computes L2 hashes from Hive blocks",
+  "description": "Minimal SPS validator observer: replays Hive blocks in memory and computes L2 block hashes",
   "type": "module",
   "exports": {
-    "./pipeline": "./src/pipeline.mts",
+    "./services": "./src/services.mts",
     "./state": "./src/state/index.mts",
-    "./bootstrap": "./src/bootstrap/index.mts",
+    "./bootstrap/seed": "./src/bootstrap/seed.mts",
+    "./block/processor": "./src/block/processor.mts",
     "./config": "./src/config.mts",
-    "./hive/client": "./src/hive/client.mts",
-    "./hive/stream": "./src/hive/stream.mts",
-    "./hive/broadcast": "./src/hive/broadcast.mts",
-    "./hash": "./src/hash/index.mts",
-    "./verify": "./src/verify/index.mts",
-    "./validator": "./src/validator/index.mts",
     "./types": "./src/types.mts"
   },
   "scripts": {
@@ -22,7 +17,9 @@
     "build": "tsc",
     "clean": "rimraf dist",
     "dev": "tsx src/main.mts",
-    "replay": "REPLAY_ONLY=1 tsx src/main.mts",
+    "start": "node dist/main.mjs",
+    "extract-seed": "tsx tools/extract-seed.mts",
+    "dbdiff": "tsx tools/dbdiff.mts",
     "lint": "eslint 'src/**/*.mts'",
     "sort": "sort-package-json",
     "test": "vitest run",
@@ -31,13 +28,17 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hiveio/dhive": "^1.3.4",
     "js-sha256": "^0.11.0",
-    "seedrandom": "^3.0.5"
+    "seedrandom": "^3.0.5",
+    "yup": "^0.32.11"
   },
   "devDependencies": {
     "@types/node": "^25.3.3",
+    "@types/pg": "^8.23.1",
+    "@types/pg-cursor": "^2.7.2",
     "@types/seedrandom": "^3.0.8",
+    "pg": "^8.23.1",
+    "pg-cursor": "^2.22.1",
     "tsx": "^4.0.0",
     "typescript": "^5.7.0"
   },

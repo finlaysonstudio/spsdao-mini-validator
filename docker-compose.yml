@@ -1,0 +1,21 @@
+services:
+  observer:
+    build: .
+    container_name: spsdao-mini-observer
+    restart: unless-stopped
+    environment:
+      SEED_FILE: /data/seed.ndjson.gz
+      HASH_LOG: /data/hashes.log
+      BLOCK_CACHE_DIR: ""
+      CUSTOM_JSON_ID: sm_sps
+      CUSTOM_JSON_PREFIX: sm_
+      BLOCKS_BEHIND_HEAD: "6"
+      BLOCKS_HEAD_MODE: irreversible
+    volumes:
+      - ./LOCAL/observer:/data
+    mem_limit: 4g
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"

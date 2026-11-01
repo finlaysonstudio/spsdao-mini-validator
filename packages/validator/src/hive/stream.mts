@@ -1,50 +1,38 @@
 import { config } from "../config.mjs";
-import { getBlock, getBlocks, getHeadBlockNum } from "./client.mjs";
+import { BlockCache } from "./cache.mjs";
+import { getHeadBlockNum } from "./client.mjs";
 import type { HiveBlock } from "./types.mjs";
 
 const POLL_INTERVAL_MS = 3000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export async function* streamBlocks(
-  startBlock: number,
-): AsyncGenerator<{ block: HiveBlock; blockNum: number; nearHead: boolean }> {
-  let nextBlock = startBlock;
-
+export async function* streamBlocks(startBlock: number, stopBlock = 0): AsyncGenerator<{ block: HiveBlock; blockNum: number; headBlock: number }> {
+  const cache = new BlockCache(config.blockCacheDir);
+  let next = startBlock;
+  let headBlock = 0;
   while (true) {
-    const headBlock = await getHeadBlockNum();
-
-    if (nextBlock > headBlock) {
-      await sleep(POLL_INTERVAL_MS);
-      continue;
-    }
-
-    const behind = headBlock - nextBlock;
-
-    if (behind >= config.replayBatchSize) {
-      // Batch fetch during catch-up
-      const batchSize = Math.min(config.replayBatchSize, behind + 1);
-      const blocks = await getBlocks(nextBlock, batchSize);
-
-      for (let i = 0; i < blocks.length; i++) {
-        const block = blocks[i];
-        if (!block) {
-          throw new Error(`Missing block ${nextBlock + i}`);
-        }
-        yield { block, blockNum: nextBlock + i, nearHead: false };
-      }
-      nextBlock += blocks.length;
-    } else {
-      // Near head — fetch one at a time
-      const block = await getBlock(nextBlock);
-      if (!block) {
+    if (stopBlock && next > stopBlock) return;
+    if (next > headBlock) {
+      headBlock = await getHeadBlockNum();
+      if (next > headBlock) {
         await sleep(POLL_INTERVAL_MS);
         continue;
       }
-      yield { block, blockNum: nextBlock, nearHead: true };
-      nextBlock++;
+    }
+    const behind = headBlock - next;
+    const batch = Math.max(1, Math.min(config.replayBatchSize, behind + 1));
+    const blocks = await Promise.all(Array.from({ length: batch }, (_, i) => cache.get(next + i)));
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      if (!block) {
+        // block not yet available from this node; back off and retry from here
+        next += i;
+        await sleep(POLL_INTERVAL_MS);
+        headBlock = 0;
+        break;
+      }
+      yield { block, blockNum: next + i, headBlock };
+      if (i === blocks.length - 1) next += blocks.length;
     }
   }
 }
