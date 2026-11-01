@@ -19,3 +19,40 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
+
+  # Compares the observer's hash log with the upstream validator's database once a minute.
+  # Needs LOCAL/checker.env (PGUSER/PGPASSWORD): run scripts/make-checker-env.sh first.
+  checker:
+    build: .
+    container_name: spsdao-mini-checker
+    restart: unless-stopped
+    command: ["node", "packages/validator/dist/check.mjs"]
+    environment:
+      HASH_LOG: /data/hashes.log
+      PGHOST: pg
+      PGPORT: "5432"
+      PGDATABASE: validator
+      CHECK_INTERVAL_SECONDS: "60"
+      CHECK_WINDOW: "5000"
+      CHECK_MAX_LAG: "100"
+    env_file:
+      - LOCAL/checker.env
+    volumes:
+      - ./LOCAL/observer:/data:ro
+    networks:
+      - default
+      - upstream_pg
+    depends_on:
+      - observer
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+networks:
+  # The upstream validator's compose network, so the checker can reach its `pg` service.
+  upstream_pg:
+    external: true
+    name: "validator:postgres"

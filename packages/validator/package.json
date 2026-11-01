@@ -13,15 +13,16 @@
     "./types": "./src/types.mts"
   },
   "scripts": {
-    "prebuild": "npm run clean",
     "build": "tsc",
     "clean": "rimraf dist",
-    "dev": "tsx src/main.mts",
-    "start": "node dist/main.mjs",
-    "extract-seed": "tsx tools/extract-seed.mts",
     "dbdiff": "tsx tools/dbdiff.mts",
+    "dev": "tsx src/main.mts",
+    "extract-seed": "tsx tools/extract-seed.mts",
     "lint": "eslint 'src/**/*.mts'",
+    "prebuild": "npm run clean",
     "sort": "sort-package-json",
+    "start": "node dist/main.mjs",
+    "start:check": "node dist/check.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
@@ -29,6 +30,7 @@
   },
   "dependencies": {
     "js-sha256": "^0.11.0",
+    "pg": "^8.23.1",
     "seedrandom": "^3.0.5",
     "yup": "^0.32.11"
   },
@@ -37,7 +39,6 @@
     "@types/pg": "^8.23.1",
     "@types/pg-cursor": "^2.7.2",
     "@types/seedrandom": "^3.0.8",
-    "pg": "^8.23.1",
     "pg-cursor": "^2.22.1",
     "tsx": "^4.0.0",
     "typescript": "^5.7.0"

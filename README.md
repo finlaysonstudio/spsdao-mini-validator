@@ -78,6 +78,44 @@ the database.
 | `STOP_BLOCK` | 0 | Stop after this block |
 | `CUSTOM_JSON_ID` / `CUSTOM_JSON_PREFIX` | `sm_sps` / `sm_` | Upstream operation ids |
 
+## Logs and health check
+
+Both containers write one JSON object per line (JSONL), suitable for shipping to Datadog as is. `status` is the log level (`info`, `warning`, `error`, or `ok` for a passing health check).
+
+Observer block line, emitted for every block once within 50 blocks of the head (every 100th block while catching up):
+
+```json
+{"ts":"2026-11-01T14:07:03.323Z","status":"info","msg":"block","block_num":111284491,"l2_block_id":"ea32…64ac","txs":2,"validator":"bamlolx","reward":0.364581,"reward_token":"SPS","head_block":111284491,"behind":0,"rate":0.33,"rss_mb":875}
+```
+
+| field | meaning |
+|---|---|
+| `block_num` | Hive block number that was just processed |
+| `l2_block_id` | the computed L2 block hash: `sha256(previous l2_block_id + "." + JSON of the block's transaction rows)`; must equal `blocks.l2_block_id` in the upstream database |
+| `txs` | number of L2 transactions in the block (matching `custom_json` ops plus virtual ops such as expirations) |
+| `validator` | the validator that upstream's seeded RNG selects to validate this block (`null` when none is selected) |
+| `reward`, `reward_token` | amount and token paid to that validator if it validates the block |
+| `head_block` | the newest block the observer is allowed to process (last irreversible block minus `BLOCKS_BEHIND_HEAD`) |
+| `behind` | `head_block - block_num`; 0 means caught up |
+| `rate` | blocks processed per second over the last 200 blocks (about 0.33 at the head, since Hive produces one block every 3 s) |
+| `rss_mb` | resident memory of the observer process |
+
+The `checker` service compares the newest `CHECK_WINDOW` lines of `hashes.log` with the upstream `blocks` table every `CHECK_INTERVAL_SECONDS` and emits one line:
+
+```json
+{"ts":"…","status":"ok","msg":"hashes match","reason":"ok","compared":5000,"matching":5000,"mismatching":0,"first_mismatch":null,"observer_head":111284491,"db_head":111284491,"lag":0,"window_blocks":5000}
+```
+
+| status | reason | meaning |
+|---|---|---|
+| `ok` | `ok` | every compared hash matches and the observer is within `CHECK_MAX_LAG` blocks of the DB head |
+| `error` | `mismatch` | at least one hash differs; `first_mismatch` has the block and both hashes |
+| `error` | `lagging` | no mismatch, but the observer is more than `CHECK_MAX_LAG` blocks behind the database and not gaining on it |
+| `warning` | `catching_up` | more than `CHECK_MAX_LAG` behind but replaying faster than the chain (normal for a few minutes after a restart) |
+| `warning` | `no_log`, `no_overlap`, `db_error` | nothing could be compared (empty log, blocks not in the DB yet, or Postgres unreachable) |
+
+The checker joins the upstream compose network (`validator:postgres`) and reads credentials from `LOCAL/checker.env`, created with `scripts/make-checker-env.sh` from the running `pg` container's environment. The file is mode 600 and gitignored.
+
 ## Known gaps
 
 Paths that upstream can take but that never occur on the current chain are not ported and
