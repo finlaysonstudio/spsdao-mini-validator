@@ -1,186 +1,91 @@
-# SPS Mini Validator
+# SPS Mini Validator (observer)
 
-A lightweight validator that replays the [Splinterlands SPS](https://github.com/TheSPSDAO/SPS-Validator) layer-2 blockchain and independently verifies L2 block hashes. Optionally participates as an active validator — checking in and validating blocks on behalf of one or more accounts.
+A minimal, in-memory port of the [TheSPSDAO/SPS-Validator](https://github.com/TheSPSDAO/SPS-Validator)
+block-processing core. It replays Hive blocks, applies every SPS layer-2 action and virtual
+operation exactly as the upstream validator does, and computes the same L2 block hash, with
+no database, no web UI, and no broadcasting.
 
-## Motivation
+Target: hash-for-hash parity with upstream **1.5.1** (verified continuously against a running
+upstream node's Postgres with `tools/dbdiff.mts`).
 
-The SPS Validator is a large, full-featured system with database dependencies, a web server, and operational complexity. If you just want to answer "are the L2 hashes correct?", you shouldn't need all of that.
+## How it works
 
-This project strips the validator down to its essential pipeline: bootstrap from a state snapshot, stream Hive blocks, replay every operation and virtual operation in the exact same order, compute the L2 hash, and compare it to known-good values. If the hashes match, the chain is honest. If they don't, something is wrong.
+1. **Seed**: an NDJSON snapshot of the upstream validator's state tables, extracted from a live
+   database inside one `REPEATABLE READ` transaction (`tools/extract-seed.mts`), so it is
+   consistent at exactly one block boundary.
+2. **Stream**: Hive blocks are fetched from public RPC nodes (`block_api.get_block`),
+   optionally cached on disk.
+3. **Process** (`src/block/processor.mts`): per block, in upstream order
+   - compute the block reward,
+   - run all virtual payload sources against block-start state (token unstaking, pool
+     claims, burned-token clearing, promise expiration, check-in expiration, missed blocks,
+     transitions, rental expiration), then execute their operations,
+   - execute every `sm_sps` / `sm_*` custom_json operation in block order,
+   - pick the block validator with the seeded PRNG,
+   - build the `TransactionEntity[]` list and hash it:
+     `sha256(prev_l2_block_id + "." + JSON.stringify(transactions))`.
+4. **Log** the hash (stdout and optionally `HASH_LOG`).
 
-The goal is **hash-for-hash parity** with the production validator using minimal code, no database, and zero external services beyond Hive RPC nodes.
-
-## How It Works
-
-```
-seed.json ──► Bootstrap State
-                   │
-                   ▼
-         Stream Hive Blocks (RPC)
-                   │
-          ┌────────┴────────┐
-          ▼                 ▼
-   Virtual Operations   Parse custom_json
-   (system-generated)   (blockchain ops)
-          │                 │
-          └────────┬────────┘
-                   ▼
-         Build TransactionEntities
-         (deterministic field order)
-                   │
-                   ▼
-          Compute L2 Hash
-          SHA256(prevHash + "." + JSON)
-                   │
-                   ▼
-         Verify Against Known Hashes
-```
-
-### 1. Bootstrap
-
-The validator starts from a `seed.json` — a snapshot of all state at a known block. This includes token balances, validators, delegations, staking pools, promises, check-ins, config, and a set of known L2 hashes to verify against.
-
-### 2. Stream Blocks
-
-Connects to Hive RPC nodes and fetches blocks sequentially. During catch-up it batch-fetches 25 blocks in parallel; near the head it streams one at a time with a 3-second poll interval. Nodes rotate on failure.
-
-### 3. Process Each Block
-
-For every block, two categories of operations execute in strict order:
-
-**Virtual operations** (system-generated, run first):
-1. Token unstaking completions
-2. Staking pool reward accruals
-3. Burned token cleanup
-4. Promise expiration
-5. Validator check-in expiration
-6. Missed block tracking
-7. Protocol transitions
-
-**Blockchain operations** (from Hive `custom_json`):
-- Filtered by ID `"sps"` or prefix `"sm_"`
-- Authorization checked (posting vs active auth)
-- ~26 operation types: transfers, staking, delegation, pools, promises, validators, licenses, price feeds, etc.
-
-### 4. Compute L2 Hash
-
-Each operation produces a `TransactionEntity` with fields in an exact, deterministic order. The L2 hash is:
-
-```
-SHA256(previous_l2_hash + "." + JSON.stringify(all_transactions))
-```
-
-JSON key order, date serialization (`Date.toJSON()`), and numeric precision (3 decimals) all must match the upstream validator exactly.
-
-### 5. Verify
-
-If the block number appears in the known hashes map, the computed hash is compared. Match = the chain is valid up to that point. Mismatch = halt with a full transaction dump for debugging.
+Every repository (`src/repos/`) mirrors the corresponding upstream repository: same event
+objects, same key order, same numeric rounding. Numbers are stored as scaled `bigint`s so
+that arithmetic matches Postgres `numeric` exactly, while every place upstream does float
+math in JavaScript is reproduced as float math here.
 
 ## Running
 
-```bash
+```sh
 npm install
-npm run dev
+# extract a seed from a running upstream validator database
+PGHOST=127.0.0.1 PGUSER=... PGPASSWORD=... PGDATABASE=validator \
+  npm run extract-seed --workspace packages/validator -- LOCAL/seed.ndjson
+gzip -k LOCAL/seed.ndjson
+# observe
+SEED_FILE=LOCAL/seed.ndjson.gz HASH_LOG=LOCAL/hashes.log npm run dev --workspace packages/validator
 ```
 
-Requires a `seed.json` in the project root (or set `SEED_FILE`).
+Container (observer only, no keys):
 
-### Environment Variables
+```sh
+mkdir -p LOCAL/observer && cp LOCAL/seed.ndjson.gz LOCAL/observer/
+docker compose up -d --build
+docker compose logs -f observer
+```
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SEED_FILE` | `seed.json` | Path to state snapshot |
-| `RPC_NODES` | `https://api.hive.blog,...` | Comma-separated Hive RPC URLs |
-| `BLOCKS_BEHIND_HEAD` | `5` | How far behind head to stream |
+### Backtesting against a running upstream node
+
+```sh
+FOLLOW=1 CONTINUE_ON_MISMATCH=1 SEED_FILE=LOCAL/seed.ndjson BLOCK_CACHE_DIR=LOCAL/blockcache \
+  PGHOST=... npm run dbdiff --workspace packages/validator
+```
+
+The harness replays from the seed and compares, for every block, each
+`validator_transactions` row (id, type, player, data, success, error, result, index), the
+chosen validator and `blocks.l2_block_id`. It follows the upstream chain after a mismatch so
+one divergence does not cascade. `LOCAL/check-hashes.sh` compares a container's hash log with
+the database.
+
+## Environment
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SEED_FILE` | `seed.ndjson` | NDJSON (or `.gz`) seed |
+| `RPC_NODES` | 5 public nodes | Comma-separated Hive RPC endpoints |
+| `BLOCKS_BEHIND_HEAD` | 6 | Lag behind the (irreversible) head |
 | `BLOCKS_HEAD_MODE` | `irreversible` | `irreversible` or `head` |
-| `REPLAY_BATCH_SIZE` | `25` | Parallel block fetch count |
-| `VALIDATORS` | _(empty)_ | Comma-separated `account:postingKey` pairs for active validation |
+| `REPLAY_BATCH_SIZE` | 25 | Blocks fetched in parallel during catch-up |
+| `BLOCK_CACHE_DIR` | (none) | On-disk cache of raw Hive blocks |
+| `HASH_LOG` | (none) | Append `block_num l2_block_id` lines here |
+| `STOP_BLOCK` | 0 | Stop after this block |
+| `CUSTOM_JSON_ID` / `CUSTOM_JSON_PREFIX` | `sm_sps` / `sm_` | Upstream operation ids |
 
-### Multi-Account Validator Mode
+## Known gaps
 
-When `VALIDATORS` is set, the mini validator actively participates on-chain:
+Paths that upstream can take but that never occur on the current chain are not ported and
+raise `UnsupportedPathError` (which aborts processing rather than silently diverging):
+`config_update` by an admin, the legacy `validator_tranche_info` shop sale, pool admin
+actions (`add_pool`, `update_pool`, `disable_pool`, `claim_pool`), the legacy admin price feed,
+and the one-time transition actions. `fulfill_promise_multi` is ported but its multi-row
+`RETURNING` order is approximated (never seen on chain).
 
-```bash
-# Single account
-VALIDATORS='myaccount:5JpostingKeyWIF...' npm run dev
-
-# Multiple accounts
-VALIDATORS='account1:5Jkey1...,account2:5Jkey2...' npm run dev
-```
-
-For each configured account, the validator will:
-- **Check in** automatically when the account's check-in expires or is missing
-- **Validate blocks** when the account is selected as the block validator via weighted PRNG
-
-Broadcasts only happen when the node is near the chain head (not during catch-up replay). Posting keys are validated at startup — invalid WIF keys cause an immediate error.
-
-### Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Run directly with tsx |
-| `npm run build` | Compile TypeScript to `dist/` |
-| `npm run lint` | ESLint |
-| `npm test` | Vitest |
-
-## Development Decisions
-
-### In-Memory State, No Database
-
-All state lives in Maps. This keeps the code simple, the dependencies minimal, and the replay fast. The tradeoff is that you must restart from the seed on every run — there's no checkpointing. For a verification tool, this is acceptable.
-
-### Seed-Based Bootstrap
-
-Rather than syncing from genesis (millions of blocks), the validator starts from a state snapshot at a recent block. This makes startup fast and lets you verify any range of blocks by choosing an appropriate seed.
-
-### Deterministic Hashing via Field Order
-
-The L2 hash depends on `JSON.stringify` output, which in JavaScript preserves object key insertion order. Transaction entities are constructed as object literals with keys in the exact order the upstream validator expects. This is fragile by nature — any field reordering, extra field, or serialization difference breaks the hash.
-
-### Virtual Operations Run First
-
-The upstream validator registers virtual operation sources before blockchain operations. This means system-generated transactions (unstaking completions, pool claims, expired check-ins) appear before user transactions in every block. The ordering within virtual sources is also fixed and critical.
-
-### 3-Decimal Precision
-
-All token amounts use `Math.round(value * 1000) / 1000`. This matches the upstream validator's precision and avoids floating-point drift across thousands of blocks.
-
-### Validator Selection via Seeded PRNG
-
-Block validators are selected deterministically using `seedrandom(blockId + prevBlockId)` with stake-weighted random selection. This means any node can independently compute who should have validated a given block.
-
-### Check-In Status vs Deletion
-
-When a validator's check-in expires, the record is set to `"inactive"` rather than deleted. This matches the upstream behavior where check-in records persist in the database with a status field, and only `"active"` check-ins are considered for expiration.
-
-## Project Structure
-
-```
-src/
-├── main.mts                 # Entry point, block processing loop
-├── config.mts               # Environment variable configuration
-├── types.mts                # Shared type definitions
-├── bootstrap/               # Seed file loading and state initialization
-├── hive/                    # RPC client, block streaming, and broadcast
-├── hash/                    # L2 hash computation and transaction building
-├── operations/              # Blockchain operation parsing and handlers
-│   └── handlers/            # Individual operation type handlers
-├── state/                   # In-memory state stores (balances, validators, etc.)
-├── validator/               # Active validator participation (check-in, validation)
-├── virtual/                 # Virtual operation generators
-└── verify/                  # Hash comparison and logging
-```
-
-## Token Types
-
-| Token | Description |
-|-------|-------------|
-| `SPS` | Liquid, transferable |
-| `SPSP` | Staked SPS (suffix convention) |
-| `LICENSE` | Transferable license token |
-| `ACTIVATED_LICENSE` | Activated, non-transferable |
-| `RUNNING_LICENSE` | Staked via validator operation |
-
-## License
-
-ISC
+Memory: about 0.9 GB RSS after loading the current seed (2.6M Hive account names, 1.4M
+promise ids, 1.5M rental ids are kept as 64-bit hashes).
