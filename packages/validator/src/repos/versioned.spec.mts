@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Services } from "../services.mjs";
 import { StateStore } from "../state/index.mjs";
-import { fakeAction } from "../testing.mjs";
+import { fakeAction } from "../__tests__/fixture.mjs";
 import { fixVoteWeight } from "../actions/transitions.mjs";
 import { TRANSITION_POINTS } from "./transitions.mjs";
 
