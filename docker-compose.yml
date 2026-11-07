@@ -7,6 +7,11 @@ services:
       SEED_FILE: /data/seed.ndjson.gz
       HASH_LOG: /data/hashes.log
       BLOCK_CACHE_DIR: ""
+      # Catch up in 1000-block chunks (far fewer RPC calls than one per block) and
+      # resume from a checkpoint after a restart instead of replaying from the seed.
+      CHUNK_CACHE_DIR: /data/chunks
+      CHECKPOINT_DIR: /data/checkpoints
+      CHECKPOINT_EVERY: "10000"
       CUSTOM_JSON_ID: sm_sps
       CUSTOM_JSON_PREFIX: sm_
       BLOCKS_BEHIND_HEAD: "6"

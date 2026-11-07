@@ -18,6 +18,8 @@ export const config = {
   stopBlock: envInt("STOP_BLOCK", 0),
   /** Write `block_num l2_block_id` lines here in addition to stdout. */
   hashLog: env("HASH_LOG", ""),
+  /** Keep retrying a failing RPC call (with backoff) this long before it is fatal. */
+  rpcRetryDeadlineMs: envInt("RPC_RETRY_DEADLINE_MS", 600000),
   /** Per-request RPC timeout. */
   rpcTimeoutMs: envInt("RPC_TIMEOUT_MS", 60000),
   /** Compact 1000-block chunk cache (see hive/chunks.mts); used while more than a chunk behind head. */

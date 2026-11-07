@@ -11,11 +11,18 @@ function rotateNode(): void {
   currentNodeIndex = (currentNodeIndex + 1) % config.rpcNodes.length;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * One JSON-RPC call, rotating through the nodes on failure. After every full
+ * pass over the nodes without success it backs off exponentially (public nodes
+ * answer bursts with HTTP 429), and only gives up after `rpcRetryDeadlineMs`.
+ */
 async function rpcCall<T>(method: string, params: unknown, preferredNode?: string): Promise<T> {
-  const maxAttempts = config.rpcNodes.length * 2;
+  const deadline = Date.now() + config.rpcRetryDeadlineMs;
   let lastError: Error | null = null;
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  for (let attempt = 0; ; attempt++) {
     const node = attempt === 0 && preferredNode ? preferredNode : getNode();
     try {
       const res = await fetch(node, {
@@ -47,6 +54,12 @@ async function rpcCall<T>(method: string, params: unknown, preferredNode?: strin
     } catch (err) {
       lastError = err as Error;
       rotateNode();
+    }
+    if ((attempt + 1) % config.rpcNodes.length === 0) {
+      const pass = (attempt + 1) / config.rpcNodes.length;
+      const wait = Math.min(30_000, 500 * 2 ** (pass - 1));
+      if (Date.now() + wait > deadline) break;
+      await sleep(wait);
     }
   }
 
