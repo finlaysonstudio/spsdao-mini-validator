@@ -21,3 +21,14 @@ describe("scaled numerics", () => {
     expect(scaledToNumber(toScaled("0.442", 3), 3)).toBe(0.442);
   });
 });
+
+describe("numberToScaled with values that are strings at runtime", () => {
+  it("passes numeric text through like node-postgres and parses it like Postgres", () => {
+    expect(numberToScaled("010000.000" as unknown as number, 3)).toBe(10000000n);
+    expect(numberToScaled("10000.000" as unknown as number, 3)).toBe(10000000n);
+  });
+  it("rejects text Postgres would reject", () => {
+    expect(() => numberToScaled("500.510000.000" as unknown as number, 3)).toThrow(/invalid input syntax/);
+    expect(() => numberToScaled("abc" as unknown as number, 3)).toThrow(/invalid input syntax/);
+  });
+});

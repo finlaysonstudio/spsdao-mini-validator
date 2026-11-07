@@ -40,8 +40,20 @@ export function parseDecimal(input: string): Decimal {
   return { neg: neg && digits !== 0n, digits, scale };
 }
 
-/** The exact decimal text node-postgres would send for a JS number. */
-export function numberToDecimalString(n: number): string {
+const PG_NUMERIC_TEXT = /^\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\s*$/;
+
+/**
+ * The exact decimal text node-postgres would send for a JS value bound to a
+ * numeric parameter. Upstream types these as numbers, but payload strings leak
+ * through unconverted (e.g. a delegation offer's `qty: "10000.000"`): JS then
+ * concatenates (`0 + "10000.000"` is "010000.000") and node-postgres sends the
+ * string as-is for Postgres to parse. Text Postgres would reject throws here.
+ */
+export function numberToDecimalString(n: number | string): string {
+  if (typeof n === "string") {
+    if (!PG_NUMERIC_TEXT.test(n)) throw new Error(`invalid input syntax for type numeric: "${n}"`);
+    return n;
+  }
   if (!Number.isFinite(n)) throw new Error(`Non-finite number ${n}`);
   return String(n);
 }
