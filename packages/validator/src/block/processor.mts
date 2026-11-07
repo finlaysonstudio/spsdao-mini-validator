@@ -10,7 +10,22 @@ import { stringify } from "../util/json.mjs";
 import { ActionOrBust, Operation, type CustomJsonOp } from "./operation.mjs";
 import { virtualSources, type VirtualPayloadSource } from "../virtual/sources.mjs";
 
-const BAD_BLOCKS = new Set([96950550, 101201159, 101387262]);
+/**
+ * Upstream SpsBlockProcessor.transformBlock (apps/sps-validator/src/sps/processor.ts): at these
+ * transition points the block's Hive transactions are dropped (microforks read by the reference
+ * nodes) and the header is replaced by these hard-coded values. Virtual ops still run.
+ */
+const BAD_BLOCKS = new Map<number, Pick<HiveBlock, "timestamp" | "block_id" | "previous">>([
+  [96950550, { timestamp: "2025-06-20T15:36:51.000", block_id: "05c7591683e0102605a769a6935275a5e760353c", previous: "05c75915721349cfbd6c42ff962cf4d66ec2b05e" }],
+  [101201159, { timestamp: "2025-11-15T09:55:21.000", block_id: "06083507a197f20ccb1863411d94d3c7d69657c7", previous: "0608350699812e651235fec8b7249a3ed178d4b0" }],
+  [101387262, { timestamp: "2025-11-21T21:27:54.000", block_id: "060b0bfeecfece0743f61e8b0f26335839f6557f", previous: "060b0bfd484a25cd78093ddfdbf09a28342c4df8" }],
+]);
+
+export function transformBlock(block_num: number, block: HiveBlock): HiveBlock {
+  const bad = BAD_BLOCKS.get(block_num);
+  if (!bad) return block;
+  return { ...bad, transactions: [], transaction_ids: [] };
+}
 
 export type ProcessedBlock = {
   block_num: number;
@@ -29,8 +44,8 @@ export class BlockProcessor {
     this.sources = virtualSources(svc);
   }
 
-  process(block_num: number, block: HiveBlock, prev_l2_block_id: string): ProcessedBlock {
-    if (BAD_BLOCKS.has(block_num)) throw new Error(`block ${block_num} needs the upstream bad-block transform`);
+  process(block_num: number, rawBlock: HiveBlock, prev_l2_block_id: string): ProcessedBlock {
+    const block = transformBlock(block_num, rawBlock);
     const ref: BlockRef = {
       block_num,
       block_id: block.block_id,

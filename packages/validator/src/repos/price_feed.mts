@@ -39,6 +39,11 @@ export class PriceFeedProducer {
     private readonly config: ConfigLoader,
   ) {}
 
+  /** Upstream RawPriceFeed.addPriceEntry (used by the legacy admin feed). */
+  addRawPriceEntry(pe: PriceEntry): EventLog[] {
+    return this.rawAdd(pe);
+  }
+
   private rawAdd(pe: PriceEntry): EventLog[] {
     const result = this.priceHistory.upsert(pe);
     return [new EventLog("upsert", "price_history", result)];

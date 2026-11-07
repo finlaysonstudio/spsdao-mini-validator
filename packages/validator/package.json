@@ -17,6 +17,7 @@
     "clean": "rimraf dist",
     "dbdiff": "tsx tools/dbdiff.mts",
     "dev": "tsx src/main.mts",
+    "diff-block": "tsx tools/diff-block.mts",
     "extract-seed": "tsx tools/extract-seed.mts",
     "lint": "eslint 'src/**/*.mts'",
     "prebuild": "npm run clean",

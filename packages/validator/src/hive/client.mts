@@ -11,16 +11,17 @@ function rotateNode(): void {
   currentNodeIndex = (currentNodeIndex + 1) % config.rpcNodes.length;
 }
 
-async function rpcCall<T>(method: string, params: unknown): Promise<T> {
+async function rpcCall<T>(method: string, params: unknown, preferredNode?: string): Promise<T> {
   const maxAttempts = config.rpcNodes.length * 2;
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const node = getNode();
+    const node = attempt === 0 && preferredNode ? preferredNode : getNode();
     try {
       const res = await fetch(node, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(config.rpcTimeoutMs),
         body: JSON.stringify({
           jsonrpc: "2.0",
           id: 1,
@@ -80,4 +81,10 @@ export async function getBlocks(
     getBlock(startBlock + i),
   );
   return Promise.all(promises);
+}
+
+/** block_api.get_block_range (at most 1000 blocks per call). */
+export async function getBlockRange(startBlock: number, count: number, node?: string): Promise<HiveBlock[]> {
+  const result = await rpcCall<{ blocks?: HiveBlock[] }>("block_api.get_block_range", { starting_block_num: startBlock, count }, node);
+  return result?.blocks ?? [];
 }

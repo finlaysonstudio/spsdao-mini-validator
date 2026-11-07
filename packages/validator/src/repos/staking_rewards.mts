@@ -6,6 +6,9 @@ import type { BalanceRepository } from "./balance.mjs";
 import type { BlockRepository } from "./blocks.mjs";
 import type { ConfigLoader, PoolSettings } from "./config.mjs";
 import { ACCOUNTS, POOLS, type AwardPool, type IAction } from "./context.mjs";
+import { TRANSITION_POINTS, type TransitionPointName } from "./transitions.mjs";
+
+const isTransitioned = (name: TransitionPointName, block_num: number) => TRANSITION_POINTS[name] <= block_num;
 
 export type StakingIncrease = [number, string] | 0;
 
@@ -38,20 +41,25 @@ export class StakingRewardsRepository {
       const claim_amount = +(accumulated_amount - reward_debt).toFixed(3);
       if (claim_amount > 0) {
         result.push(...this.balances.updateBalance(action, pool.reward_account, player, pool.token, claim_amount, `claim_staking_rewards_${pool_name}`));
-        const total_staked = -1 * this.balances.getBalance(ACCOUNTS.STAKING, pool.stake);
-        result.push(
-          new EventLog("insert", "staking_rewards_claim", {
-            version: 2,
-            player,
-            pool_name,
-            token: pool.token,
-            amount: claim_amount,
-            staked_amount: staked,
-            accumulated_amount,
-            reward_debt,
-            total_staked,
-          }),
-        );
+        if (isTransitioned("adjust_token_distribution_strategy", action.op.block_num)) {
+          // SpsStakingRewardsRepository.enableV2ClaimRewardsLog
+          const total_staked = -1 * this.balances.getBalance(ACCOUNTS.STAKING, pool.stake);
+          result.push(
+            new EventLog("insert", "staking_rewards_claim", {
+              version: 2,
+              player,
+              pool_name,
+              token: pool.token,
+              amount: claim_amount,
+              staked_amount: staked,
+              accumulated_amount,
+              reward_debt,
+              total_staked,
+            }),
+          );
+        } else {
+          result.push(new EventLog("insert", "staking_rewards_claim", { player, pool_name, token: pool.token, amount: claim_amount, pool: pool_name }));
+        }
       }
     }
 

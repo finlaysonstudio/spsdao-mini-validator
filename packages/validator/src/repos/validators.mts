@@ -7,6 +7,17 @@ import { addScaled, formatScaled, numberToScaled, scaledToNumber } from "../util
 import type { BalanceRepository } from "./balance.mjs";
 import type { ConfigLoader } from "./config.mjs";
 import { localeSort, TOKENS, type IAction } from "./context.mjs";
+import { TRANSITION_POINTS } from "./transitions.mjs";
+
+/**
+ * Upstream ValidatorEntryVersion (SpsValidatorRepository / SpsValidatorVoteRepository):
+ * v1 rows omit consecutive_missed_blocks; v2 from adjust_token_distribution_strategy on.
+ */
+export const isV2 = (block_num: number) => TRANSITION_POINTS.adjust_token_distribution_strategy <= block_num;
+function versioned<T extends { consecutive_missed_blocks?: number }>(entry: T, block_num: number): T {
+  if (!isV2(block_num)) delete entry.consecutive_missed_blocks;
+  return entry;
+}
 
 /** Mirrors upstream ValidatorEntry (into: total_votes parsed, v2 keeps consecutive_missed_blocks). */
 export type ValidatorEntry = {
@@ -18,7 +29,7 @@ export type ValidatorEntry = {
   missed_blocks: number;
   api_url: string | null;
   last_version: string | null;
-  consecutive_missed_blocks: number;
+  consecutive_missed_blocks?: number;
 };
 
 /** Raw DB row shape (total_votes as numeric text), column order. */
@@ -36,8 +47,8 @@ function rawRow(r: ValidatorRow) {
   };
 }
 
-function into(r: ValidatorRow): ValidatorEntry {
-  return { ...rawRow(r), total_votes: scaledToNumber(r.total_votes, 3) };
+function into(r: ValidatorRow, block_num: number): ValidatorEntry {
+  return versioned({ ...rawRow(r), total_votes: scaledToNumber(r.total_votes, 3) } as ValidatorEntry, block_num);
 }
 
 /** ORDER BY total_votes DESC, account_name */
@@ -51,7 +62,7 @@ function orderValidators(rows: ValidatorRow[]): ValidatorRow[] {
 export class ValidatorRepository {
   constructor(private readonly state: StateStore, private readonly config: ConfigLoader) {}
 
-  register(params: { account: string; is_active: boolean; post_url?: string; reward_account?: string; api_url?: string }, _action: IAction): EventLog {
+  register(params: { account: string; is_active: boolean; post_url?: string; reward_account?: string; api_url?: string }, action: IAction): EventLog {
     let row = this.state.validators.get(params.account);
     if (!row) {
       row = {
@@ -72,7 +83,7 @@ export class ValidatorRepository {
       row.reward_account = params.reward_account ?? null;
       row.api_url = params.api_url ?? null;
     }
-    return new EventLog("upsert", "validators", into(row));
+    return new EventLog("upsert", "validators", into(row, action.op.block_num));
   }
 
   private must(account: string): ValidatorRow {
@@ -81,16 +92,16 @@ export class ValidatorRepository {
     return row;
   }
 
-  disable(account: string, _action: IAction): EventLog {
+  disable(account: string, action: IAction): EventLog {
     const row = this.must(account);
     row.is_active = false;
-    return new EventLog("update", "validators", into(row));
+    return new EventLog("update", "validators", into(row, action.op.block_num));
   }
 
-  incrementMissedBlocks(account: string, increment: number, _action: IAction): EventLog[] {
+  incrementMissedBlocks(account: string, increment: number, action: IAction): EventLog[] {
     const row = this.must(account);
     row.missed_blocks += increment;
-    row.consecutive_missed_blocks += increment;
+    if (isV2(action.op.block_num)) row.consecutive_missed_blocks += increment;
     // explicit RETURNING column list order
     const data = {
       account_name: row.account_name,
@@ -101,21 +112,21 @@ export class ValidatorRepository {
       reward_account: row.reward_account,
       api_url: row.api_url,
       last_version: row.last_version,
-      consecutive_missed_blocks: row.consecutive_missed_blocks,
+      consecutive_missed_blocks: row.consecutive_missed_blocks as number | undefined,
     };
-    return [new EventLog("update", "validators", data)];
+    return [new EventLog("update", "validators", versioned(data, action.op.block_num))];
   }
 
-  updateVersion(account: string, version: string, _action: IAction): EventLog[] {
+  updateVersion(account: string, version: string, action: IAction): EventLog[] {
     const row = this.must(account);
     row.last_version = version;
-    return [new EventLog("update", "validators", into(row))];
+    return [new EventLog("update", "validators", into(row, action.op.block_num))];
   }
 
-  resetConsecutiveMissedBlocks(account: string, _action: IAction): EventLog[] {
+  resetConsecutiveMissedBlocks(account: string, action: IAction): EventLog[] {
     const row = this.must(account);
     row.consecutive_missed_blocks = 0;
-    return [new EventLog("update", "validators", into(row))];
+    return [new EventLog("update", "validators", into(row, action.op.block_num))];
   }
 
   getValidators(params: { limit?: number; is_active?: boolean; reward_account?: string }): ReturnType<typeof rawRow>[] {
@@ -127,9 +138,9 @@ export class ValidatorRepository {
     return rows.map(rawRow);
   }
 
-  lookup(account: string, _block_num?: number): ValidatorEntry | null {
+  lookup(account: string, block_num: number): ValidatorEntry | null {
     const row = this.state.validators.get(account);
-    return row ? into(row) : null;
+    return row ? into(row, block_num) : null;
   }
 
   getBlockValidator(block: Pick<BlockRef, "prng" | "block_num">): ValidatorEntry | null {
@@ -137,7 +148,7 @@ export class ValidatorRepository {
     if (!cfg) return null;
     if (cfg.paused_until_block > block.block_num) return null;
     const rows = orderValidators(this.state.validators.all().filter((r) => r.is_active && r.total_votes > 0n));
-    const valid = rows.map(into);
+    const valid = rows.map((r) => into(r, block.block_num));
     const min_validators = cfg.min_validators;
     if (min_validators === undefined || rows.length < min_validators) return null;
     const rng = block.prng;
@@ -185,7 +196,7 @@ export class ValidatorVoteRepository {
     const validator = action.params.account_name as string;
     this.state.votes.set(action.op.account, validator, numberToScaled(balance, 3));
     return [
-      ...this.syncValidatorVotes([validator]),
+      ...this.syncValidatorVotes([validator], action.op.block_num),
       this.historyEvent(action, true, balance),
       // upstream logs an un-awaited Promise here, which serialises as {}
       new EventLog("insert", "validator_votes", {}),
@@ -198,12 +209,12 @@ export class ValidatorVoteRepository {
     const w = this.state.votes.delete(action.op.account, validator);
     const rows = w === undefined ? [] : [{ voter: action.op.account, validator, vote_weight: formatScaled(w, 3) }];
     const deleteVote = new EventLog("delete", "validator_votes", rows);
-    const synced = this.syncValidatorVotes([validator]);
+    const synced = this.syncValidatorVotes([validator], action.op.block_num);
     const history = this.historyEvent(action, false, balance);
     return [deleteVote, ...synced, history];
   }
 
-  incrementVoteWeight(voter: string, amount: number, _block_num: number): EventLog[] {
+  incrementVoteWeight(voter: string, amount: number, block_num: number): EventLog[] {
     const votes = this.state.votes.getByVoter(voter);
     const updated = votes.map((v) => {
       const nw = addScaled(v.vote_weight, amount, 3);
@@ -213,7 +224,7 @@ export class ValidatorVoteRepository {
     updated.sort((a, b) => localeSort(a.validator, b.validator) || localeSort(a.voter, b.voter));
     const voteEvents = updated.map((v) => new EventLog("update", "validator_votes", v));
     if (updated.length > 0) {
-      return [...voteEvents, ...this.syncValidatorVotes(updated.map((v) => v.validator))];
+      return [...voteEvents, ...this.syncValidatorVotes(updated.map((v) => v.validator), block_num)];
     }
     return voteEvents;
   }
@@ -222,7 +233,7 @@ export class ValidatorVoteRepository {
     throw new UnsupportedPathError("setVoteWeight is transition-only");
   }
 
-  private syncValidatorVotes(validators: string[]): EventLog[] {
+  private syncValidatorVotes(validators: string[], block_num: number): EventLog[] {
     const updated: ValidatorRow[] = [];
     for (const name of new Set(validators)) {
       const voters = this.state.votes.votersOf(name);
@@ -233,6 +244,6 @@ export class ValidatorVoteRepository {
       updated.push(row);
     }
     updated.sort((a, b) => localeSort(a.account_name, b.account_name));
-    return updated.map((v) => new EventLog("update", "validators", rawRow(v)));
+    return updated.map((v) => new EventLog("update", "validators", versioned(rawRow(v) as ReturnType<typeof rawRow> & { consecutive_missed_blocks?: number }, block_num)));
   }
 }

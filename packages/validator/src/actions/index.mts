@@ -618,15 +618,26 @@ class TopPriceFeedAction extends Action<{ updates: { token: string; price: numbe
   }
 }
 
-class LegacyAdminPriceFeedAction extends Action<{ sps_price: number }> {
-  constructor(op: Op, data: unknown, index?: number) {
-    super(S.legacy_price_feed, op, data, index);
-  }
-  validate(): boolean {
-    throw new UnsupportedPathError("legacy admin price_feed");
+/** Upstream LegacyAdminPriceFeedAction -> AdminPriceFeedAction proxy, writing through RawPriceFeed. */
+class LegacyAdminPriceFeedAction extends AdminAction<{ sps_price: number }> {
+  constructor(op: Op, data: unknown, index: number | undefined, private readonly svc: Services) {
+    super(svc.config, S.legacy_price_feed, op, data, index);
   }
   process(): EventLog[] {
-    throw new UnsupportedPathError("legacy admin price_feed");
+    const updates = [{ token: TOKENS.SPS, price: this.params.sps_price }];
+    const results: EventLog[] = [];
+    for (const update of updates) {
+      results.push(
+        ...this.svc.priceFeed.addRawPriceEntry({
+          validator: this.op.account,
+          token: update.token,
+          token_price: update.price,
+          block_num: this.op.block_num,
+          block_time: this.op.block_time,
+        }),
+      );
+    }
+    return results;
   }
 }
 
@@ -961,7 +972,7 @@ export class ActionRouter {
       { name: "config_update", factory: f(ConfigUpdateAction) },
       { name: "update_validator", factory: f(UpdateValidatorAction) },
       { name: "token_award", factory: f(TokenAwardAction) },
-      { name: "price_feed", factory: (op, data, index) => new LegacyAdminPriceFeedAction(op, data, index), to: priceFeedStart },
+      { name: "price_feed", factory: (op, data, index) => new LegacyAdminPriceFeedAction(op, data, index, svc), to: priceFeedStart },
       { name: "price_feed", factory: f(TopPriceFeedAction), from: priceFeedStart },
       { name: "token_transfer_multi", factory: f(TokenTransferMultiAction) },
       { name: "shop_purchase", factory: f(ShopPurchaseAction) },
