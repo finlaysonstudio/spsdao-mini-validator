@@ -1,18 +1,18 @@
 /**
  * State checkpoints: the whole StateStore, serialized with V8's structured
  * clone (Maps, Sets, BigInts, Dates and typed arrays round-trip exactly) and
- * zstd-compressed.
+ * gzip-compressed (level 1; zstd is not available in upstream's Node 23.3).
  *
  * The store's classes are walked generically: every own field of every class
  * instance is captured, so new fields are picked up without changes here. On
  * restore the fields are poured back into a freshly constructed StateStore.
  *
- * File: <dir>/checkpoint-<block_num>.v8.zst, written atomically.
+ * File: <dir>/checkpoint-<block_num>.v8.gz, written atomically.
  */
 import { mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { deserialize, serialize } from "node:v8";
-import { zstdCompressSync, zstdDecompressSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { StateStore } from "./index.mjs";
 
 const VERSION = 1;
@@ -59,12 +59,12 @@ function restore(target: object, snap: Instance): void {
   for (const k of ownKeys) if (!(k in snap.fields)) throw new Error(`checkpoint lacks field ${snap.__class}.${k}`);
 }
 
-const fileFor = (dir: string, block: number) => join(dir, `checkpoint-${String(block).padStart(10, "0")}.v8.zst`);
+const fileFor = (dir: string, block: number) => join(dir, `checkpoint-${String(block).padStart(10, "0")}.v8.gz`);
 
 export function writeCheckpoint(dir: string, state: StateStore, meta: Omit<CheckpointMeta, "version" | "written_at">): string {
   mkdirSync(dir, { recursive: true });
   const full: CheckpointMeta = { ...meta, version: VERSION, written_at: new Date().toISOString() };
-  const buf = zstdCompressSync(serialize({ meta: full, state: capture(state) }));
+  const buf = gzipSync(serialize({ meta: full, state: capture(state) }), { level: 1 });
   const f = fileFor(dir, meta.block_num);
   const tmp = `${f}.tmp-${process.pid}`;
   writeFileSync(tmp, buf);
@@ -81,14 +81,14 @@ export function listCheckpoints(dir: string): number[] {
     return [];
   }
   return names
-    .map((n) => /^checkpoint-(\d+)\.v8\.zst$/.exec(n))
+    .map((n) => /^checkpoint-(\d+)\.v8\.gz$/.exec(n))
     .filter((m): m is RegExpExecArray => m !== null)
     .map((m) => parseInt(m[1], 10))
     .sort((a, b) => a - b);
 }
 
 export function loadCheckpoint(dir: string, block: number): { state: StateStore; meta: CheckpointMeta } {
-  const { meta, state: snap } = deserialize(zstdDecompressSync(readFileSync(fileFor(dir, block)))) as { meta: CheckpointMeta; state: Instance };
+  const { meta, state: snap } = deserialize(gunzipSync(readFileSync(fileFor(dir, block)))) as { meta: CheckpointMeta; state: Instance };
   if (meta.version !== VERSION) throw new Error(`checkpoint version ${meta.version} != ${VERSION}`);
   const state = new StateStore();
   restore(state, snap);
@@ -101,9 +101,9 @@ export function pruneCheckpoints(dir: string, keep: number, keepEvery: number): 
   const recent = new Set(all.slice(-keep));
   for (const b of all) {
     if (recent.has(b) || (keepEvery > 0 && b % keepEvery === 0)) continue;
-    for (const ext of [".v8.zst", ".json"]) {
+    for (const ext of [".v8.gz", ".json"]) {
       try {
-        unlinkSync(fileFor(dir, b).replace(/\.v8\.zst$/, ext));
+        unlinkSync(fileFor(dir, b).replace(/\.v8\.gz$/, ext));
       } catch {
         /* already gone */
       }

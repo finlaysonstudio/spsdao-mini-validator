@@ -50,8 +50,13 @@ async function start(): Promise<{ state: StateStore; block_num: number; l2_block
   return { state, block_num: meta.block_num, l2_block_id: meta.l2_block_id, verified: true };
 }
 
+/** Upstream pins node:23.3 (V8 float functions differ between releases; see Dockerfile). */
+const UPSTREAM_NODE = "v23.3.";
+
 async function main() {
+  if (!process.version.startsWith(UPSTREAM_NODE)) warn("node version differs from upstream's; float results may not match", { node: process.version, upstream: UPSTREAM_NODE + "x" });
   log("observer starting", {
+    node: process.version,
     seed_file: config.seedFile,
     checkpoint_dir: config.checkpointDir || null,
     checkpoint_every: config.checkpointDir ? config.checkpointEvery : null,
