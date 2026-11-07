@@ -18,8 +18,18 @@ describe("transformBlock (upstream bad-block transition points)", () => {
     expect(b.timestamp).toBe("2025-06-20T15:36:51.000");
   });
 
-  it.each([101201159, 101387262])("transforms %i", (n) => {
-    expect(transformBlock(n, raw).transactions).toEqual([]);
+  it("drops transactions at 101201159", () => {
+    expect(transformBlock(101201159, raw).transactions).toEqual([]);
+  });
+
+  it("keeps transactions but pins the microfork header at 101387262 (deviates from upstream)", () => {
+    const b = transformBlock(101387262, raw);
+    expect(b.transactions).toBe(raw.transactions);
+    expect(b.transaction_ids).toEqual(["abc"]);
+    expect(b.block_id).toBe("060b0bfe78f7279a3384d2091cbd191e478c0a69");
+    expect(b.previous).toBe("060b0bfd484a25cd78093ddfdbf09a28342c4df8");
+    expect(b.timestamp).toBe("2025-11-21T21:27:54.000");
+    expect("keepTransactions" in b).toBe(false);
   });
 
   it("leaves other blocks untouched", () => {
