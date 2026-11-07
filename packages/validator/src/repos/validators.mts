@@ -163,8 +163,15 @@ export class ValidatorRepository {
     return valid[i] ?? null;
   }
 
-  resetMissedBlocksForAllValidators(): never {
-    throw new UnsupportedPathError("resetMissedBlocksForAllValidators is transition-only");
+  /** UPDATE validators SET consecutive_missed_blocks = 0, missed_blocks = 0 RETURNING *, sorted with localeCompare. */
+  resetMissedBlocksForAllValidators(action: IAction): EventLog[] {
+    const rows = this.state.validators.all();
+    for (const r of rows) {
+      r.consecutive_missed_blocks = 0;
+      r.missed_blocks = 0;
+    }
+    rows.sort((a, b) => localeSort(a.account_name, b.account_name));
+    return rows.map((r) => new EventLog("update", "validators", into(r, action.op.block_num)));
   }
 }
 
@@ -229,8 +236,19 @@ export class ValidatorVoteRepository {
     return voteEvents;
   }
 
-  setVoteWeight(): never {
-    throw new UnsupportedPathError("setVoteWeight is transition-only");
+  /** UPDATE validator_votes SET vote_weight = weight WHERE voter RETURNING *, then sync totals. */
+  setVoteWeight(voter: string, weight: number, block_num: number): EventLog[] {
+    const scaled = numberToScaled(weight, 3);
+    const updated = this.state.votes.getByVoter(voter).map((v) => {
+      this.state.votes.set(v.voter, v.validator, scaled);
+      return { voter: v.voter, validator: v.validator, vote_weight: formatScaled(scaled, 3) };
+    });
+    updated.sort((a, b) => localeSort(a.validator, b.validator) || localeSort(a.voter, b.voter));
+    const voteEvents = updated.map((v) => new EventLog("update", "validator_votes", v));
+    if (updated.length > 0) {
+      return [...voteEvents, ...this.syncValidatorVotes(updated.map((v) => v.validator), block_num)];
+    }
+    return voteEvents;
   }
 
   private syncValidatorVotes(validators: string[], block_num: number): EventLog[] {

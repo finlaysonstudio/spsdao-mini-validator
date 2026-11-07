@@ -10,6 +10,7 @@ import { ErrorType, UnsupportedPathError, ValidationError } from "../util/errors
 import { ACCOUNTS, TOKENS, TokenSupport } from "../repos/context.mjs";
 import type { ValidatorEntry } from "../repos/validators.mjs";
 import { Action, AdminAction, type ActionFactory, type ExecutableAction } from "./base.mjs";
+import * as T from "./transitions.mjs";
 
 type Op = OperationData;
 
@@ -931,7 +932,20 @@ class TransitionAction extends Action<{ block_num: number }> {
     return true;
   }
   process(): EventLog[] {
-    throw new UnsupportedPathError(`transition ${this.action_name}`);
+    switch (this.action_name) {
+      case "transition_fix_vote_weight":
+        return T.fixVoteWeight(this.svc, this);
+      case "transition_cleanup_lite_accounts":
+        return T.cleanupLiteAccounts(this.svc, this);
+      case "transition_balance_token_staking_spsp":
+        return T.balanceTokenStakingAccount(this.svc, this);
+      case "transition_adjust_token_distribution_strategy":
+        return T.adjustTokenDistributionStrategy(this.svc, this);
+      case "transition_cancel_delegation_promises":
+        return T.cancelDelegationPromises(this.svc, this);
+      default:
+        throw new UnsupportedPathError(`transition ${this.action_name}`);
+    }
   }
 }
 

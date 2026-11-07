@@ -103,8 +103,12 @@ export class PromiseRepository {
       .sort((a, b) => pgCompare(a.ext_id, b.ext_id));
   }
 
-  getOpenPromisesByType(): never {
-    throw new UnsupportedPathError("getOpenPromisesByType is transition-only");
+  /** WHERE type AND status = 'open' ORDER BY ext_id */
+  getOpenPromisesByType(type: string): PromiseRow[] {
+    return this.state.promises
+      .liveRows()
+      .filter((p) => p.type === type && p.status === "open")
+      .sort((a, b) => pgCompare(a.ext_id, b.ext_id));
   }
 
   insert(promise: PromiseInsert, action: IAction): [PromiseEntity, EventLog[]] {

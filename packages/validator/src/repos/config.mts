@@ -62,6 +62,24 @@ function parseValue(value: string, type: string): ConfigData {
   }
 }
 
+/** ConfigRepository.value_type */
+export function configValueType(value: ConfigData): string {
+  switch (typeof value) {
+    case "string":
+      return "string";
+    case "number":
+      return "number";
+    case "boolean":
+      return "boolean";
+    case "object":
+      if (Array.isArray(value)) return "array";
+      if (value instanceof Date) return "date";
+      return "object";
+    default:
+      throw new Error(`unsupported config value type ${typeof value}`);
+  }
+}
+
 export function unparseValue(value: ConfigData): string {
   switch (typeof value) {
     case "string":
@@ -189,6 +207,27 @@ export class ConfigLoader {
     log(`Updated config value [${group_name}.${name}] to ${value}, reloading.`);
     this.reload();
     return this.rowEvent(row);
+  }
+
+  /**
+   * SpsConfigLoader.reloadingUpsertConfig: INSERT (index 0) ... ON CONFLICT (group_name, name)
+   * DO UPDATE SET value, value_type; RETURNING *; then a full reload.
+   */
+  reloadingUpsertConfig(group_name: string, group_type: string, name: string, value: ConfigData): EventLog {
+    const unparsed = unparseValue(value);
+    const value_type = configValueType(value);
+    let row = this.state.config.get(group_name, name);
+    if (row) {
+      row.value = unparsed;
+      row.value_type = value_type;
+    } else {
+      row = { group_name, group_type, name, index: 0, value_type, value: unparsed, last_updated_date: null, last_updated_tx: null };
+      this.state.config.set(row);
+    }
+    log(`Inserted config value [${group_name}.${name}] to ${value}, reloading database.`);
+    this.reload();
+    const ev = this.rowEvent(row);
+    return new EventLog("upsert", "config", ev.data);
   }
 
   exists(group_name: string, name: string): boolean {

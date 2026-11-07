@@ -48,6 +48,19 @@ export class Balances {
     if (!this.map.has(player + SEP + token)) this.set(player, token, 0n);
   }
 
+  /** Whether a balances row exists (a JOIN on balances needs the row, not a zero default). */
+  has(player: string, token: string): boolean {
+    return this.map.has(player + SEP + token);
+  }
+
+  /** Every row (unordered). */
+  *rows(): IterableIterator<{ player: string; token: string; balance: bigint }> {
+    for (const [k, balance] of this.map) {
+      const i = k.lastIndexOf(SEP);
+      yield { player: k.slice(0, i), token: k.slice(i + 1), balance };
+    }
+  }
+
   /** Rows for a player ordered by token (pg collation). */
   getBalances(player: string): { player: string; token: string; balance: number }[] {
     const tokens = Array.from(this.byPlayer.get(player) ?? []);
@@ -133,6 +146,11 @@ export class Votes {
     const m = this.byVoter.get(voter);
     if (!m) return [];
     return Array.from(m.entries()).map(([validator, vote_weight]) => ({ voter, validator, vote_weight }));
+  }
+
+  /** Every voter with at least one vote (unordered). */
+  voters(): string[] {
+    return Array.from(this.byVoter.keys());
   }
 
   votersOf(validator: string): string[] {
