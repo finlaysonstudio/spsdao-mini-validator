@@ -19,7 +19,8 @@ import { streamBlocks } from "./hive/stream.mjs";
 import { Services } from "./services.mjs";
 import { listCheckpoints, loadCheckpoint, pruneCheckpoints, writeCheckpoint } from "./state/checkpoint.mjs";
 import { StateStore } from "./state/index.mjs";
-import { error, log, warn } from "./util/log.mjs";
+import { error, log, logStatus, warn } from "./util/log.mjs";
+import { ShadowBroadcaster, ValidatorDuties, type DutyEvent } from "./validator/duties.mjs";
 
 /** Blocks per second over the most recent `size` processed blocks. */
 class RollingRate {
@@ -53,6 +54,27 @@ async function start(): Promise<{ state: StateStore; block_num: number; l2_block
 /** Upstream pins node:23.3 (V8 float functions differ between releases; see Dockerfile). */
 const UPSTREAM_NODE = "v23.3.";
 
+function makeDuties(svc: Services): ValidatorDuties | null {
+  if (config.validatorAccounts.length === 0) return null;
+  if (config.validatorMode !== "shadow") throw new Error(`VALIDATOR_MODE=${config.validatorMode} is not supported; only "shadow" exists`);
+  const emit = ({ status, msg, fields }: DutyEvent) => {
+    logStatus(status, msg, { mode: "shadow", ...fields });
+    if (config.dutyLog) appendFileSync(config.dutyLog, JSON.stringify({ ts: new Date().toISOString(), status, msg, mode: "shadow", ...fields }) + "\n");
+  };
+  const duties = new ValidatorDuties({
+    svc,
+    accounts: config.validatorAccounts,
+    broadcaster: new ShadowBroadcaster({ emit, customJsonId: config.customJsonId }),
+    emit,
+    version: config.validatorVersion,
+    validateBlockDelay: config.validateBlockDelay,
+    enableCheckIns: config.enableCheckIns,
+    checkInRetryBlocks: config.checkInRetryBlocks,
+  });
+  log("validator duties enabled", { mode: "shadow", accounts: config.validatorAccounts, role: duties.role, validate_block_delay: config.validateBlockDelay, check_ins: config.enableCheckIns, version: config.validatorVersion });
+  return duties;
+}
+
 async function main() {
   if (!process.version.startsWith(UPSTREAM_NODE)) warn("node version differs from upstream's; float results may not match", { node: process.version, upstream: UPSTREAM_NODE + "x" });
   log("observer starting", {
@@ -68,6 +90,7 @@ async function main() {
   const svc = new Services(state, { custom_json_id: config.customJsonId, custom_json_prefix: config.customJsonPrefix });
   const processor = new BlockProcessor(svc);
   const ref = config.referenceApi ? new ReferenceApi(config.referenceApi) : null;
+  const duties = makeDuties(svc);
 
   // Hashes since the last verified block, for bisecting a mismatch.
   let lastVerified = verified ? startBlock : 0;
@@ -139,6 +162,7 @@ async function main() {
       });
     }
     if (config.hashLog) appendFileSync(config.hashLog, `${blockNum} ${result.l2_block_id}\n`);
+    duties?.onBlock({ block_num: blockNum, l2_block_id: result.l2_block_id, validator: result.validator, transactions: result.transactions, head_block: headBlock });
 
     const atCheckpoint = config.checkpointDir !== "" && blockNum % config.checkpointEvery === 0;
     let ok: boolean | null = null;

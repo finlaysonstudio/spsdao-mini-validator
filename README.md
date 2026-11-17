@@ -78,6 +78,45 @@ the database.
 | `STOP_BLOCK` | 0 | Stop after this block |
 | `CUSTOM_JSON_ID` / `CUSTOM_JSON_PREFIX` | `sm_sps` / `sm_` | Upstream operation ids |
 
+## Validator duties (shadow mode)
+
+With `VALIDATOR_ACCOUNTS` set, the observer also performs the validator's duties for each listed
+account, in **shadow mode**: every `validate_block` and `check_in_validator` transaction is built
+exactly as upstream's `HiveClient` would broadcast it and logged, but nothing is signed or sent and
+no key is read.
+
+- **Block validation** (upstream `processor.ts`): when the seeded PRNG picks a listed account for a
+  block within `max_block_age` of the head, send `{block_num, hash, version}`.
+- **Leader/follower** (Fire Horse `VALIDATE_BLOCK_DELAY`): with a delay of `N > 0` the validation is
+  held for `N` blocks and sent only if no validation for that block has appeared on chain.
+- **Check-ins** (upstream `ValidatorCheckInPlugin`, Fire Horse jitter): per reward account, check in
+  at `last_check_in + check_in_interval_blocks + jitter` (`jitter = sha256("account:last")` modulo
+  half the window, so every node agrees), plus the follower delay. An unconfirmed check-in is re-sent
+  after `CHECK_IN_RETRY_BLOCKS`. Accounts that share a reward account check in once.
+- **Observation**: every `validate_block` / `check_in_validator` on chain from a listed account
+  (for example, sent by the upstream node that holds the key) is compared with this node's hash and
+  with what it intended to send.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `VALIDATOR_ACCOUNTS` | (none) | Comma-separated validator accounts (`VALIDATOR_ACCOUNT` also accepted); empty disables duties |
+| `VALIDATOR_MODE` | `shadow` | Only `shadow` exists |
+| `VALIDATE_BLOCK_DELAY` | 0 | 0 = leader; `N` = follower that waits `N` blocks |
+| `ENABLE_CHECK_INS` | `true` | Check in for the listed accounts |
+| `CHECK_IN_RETRY_BLOCKS` | 100 | Re-send an unconfirmed check-in after this many blocks |
+| `VALIDATOR_VERSION` | `1.5.1-mini.0` | `version` param (recorded on chain as the validator's `last_version`) |
+| `DUTY_LOG` | (none) | Also append duty events (JSONL) to this file |
+
+Duty log lines (`mode: "shadow"`):
+
+| msg | status | meaning |
+|---|---|---|
+| `shadow broadcast` | info | a transaction this node would send; `custom_json` is the exact operation |
+| `duty deferred` / `duty skipped` | info / warning | follower hold, leader already validated, paused, or too old after the delay |
+| `observed validation` | ok / error | on-chain `validate_block` by a listed account; `match` = its hash equals ours, `intent_match` = equals what we would have sent |
+| `observed check-in` | ok / error | on-chain check-in; `match` = its hash equals ours for that block; `blocks_from_intent` = how far it landed from our intended block |
+| `validation missed` | error | a block we would have validated passed `max_block_age` with no validation on chain |
+
 ## Logs and health check
 
 Both containers write one JSON object per line (JSONL), suitable for shipping to Datadog as is. `status` is the log level (`info`, `warning`, `error`, or `ok` for a passing health check).

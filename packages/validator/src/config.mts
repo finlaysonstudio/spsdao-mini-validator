@@ -35,4 +35,19 @@ export const config = {
   referenceApi: env("REFERENCE_API", ""),
   /** Verify against the reference every this many blocks (and always before a checkpoint). */
   verifyEvery: envInt("VERIFY_EVERY", 10000),
+  /** Validator accounts to validate and check in for (comma-separated; VALIDATOR_ACCOUNT also accepted). Empty = observer only. */
+  validatorAccounts: env("VALIDATOR_ACCOUNTS", env("VALIDATOR_ACCOUNT", ""))
+    .split(",")
+    .map((a) => a.trim())
+    .filter(Boolean),
+  /** Only "shadow" exists: duties are computed and logged, nothing is signed or sent. */
+  validatorMode: env("VALIDATOR_MODE", "shadow"),
+  /** Fire Horse VALIDATE_BLOCK_DELAY: 0 = leader, > 0 = follower. */
+  validateBlockDelay: envInt("VALIDATE_BLOCK_DELAY", 0),
+  enableCheckIns: env("ENABLE_CHECK_INS", "true") === "true",
+  checkInRetryBlocks: envInt("CHECK_IN_RETRY_BLOCKS", 100),
+  /** Version string sent with validate_block / check_in_validator (recorded on chain as last_version). */
+  validatorVersion: env("VALIDATOR_VERSION", "1.5.1-mini.0"),
+  /** Append duty events (JSONL) here in addition to stdout. */
+  dutyLog: env("DUTY_LOG", ""),
 };

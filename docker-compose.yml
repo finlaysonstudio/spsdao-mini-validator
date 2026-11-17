@@ -16,6 +16,11 @@ services:
       CUSTOM_JSON_PREFIX: sm_
       BLOCKS_BEHIND_HEAD: "6"
       BLOCKS_HEAD_MODE: irreversible
+      # Shadow mode: compute and log validations/check-ins for these accounts; nothing is sent.
+      VALIDATOR_ACCOUNTS: nullfame
+      VALIDATOR_MODE: shadow
+      VALIDATE_BLOCK_DELAY: "0"
+      DUTY_LOG: /data/duties.log
     volumes:
       - ./LOCAL/observer:/data
     mem_limit: 4g
