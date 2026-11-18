@@ -5,6 +5,8 @@
   "description": "Minimal SPS validator observer: replays Hive blocks in memory and computes L2 block hashes",
   "type": "module",
   "exports": {
+    ".": "./src/lib.mts",
+    "./lib": "./src/lib.mts",
     "./services": "./src/services.mts",
     "./state": "./src/state/index.mts",
     "./bootstrap/seed": "./src/bootstrap/seed.mts",
