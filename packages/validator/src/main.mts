@@ -13,6 +13,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "./config.mjs";
 import { BlockProcessor } from "./block/processor.mjs";
+import { writeSnapshot } from "./bootstrap/export.mjs";
 import { loadSeed } from "./bootstrap/seed.mjs";
 import { ReferenceApi } from "./hive/reference.mjs";
 import { streamBlocks } from "./hive/stream.mjs";
@@ -20,6 +21,7 @@ import { Services } from "./services.mjs";
 import { listCheckpoints, loadCheckpoint, pruneCheckpoints, writeCheckpoint } from "./state/checkpoint.mjs";
 import { StateStore } from "./state/index.mjs";
 import { error, log, logStatus, warn } from "./util/log.mjs";
+import { assertConsensusMathPow } from "./util/mathpow.mjs";
 import { ShadowBroadcaster, ValidatorDuties, type DutyEvent } from "./validator/duties.mjs";
 
 /** Blocks per second over the most recent `size` processed blocks. */
@@ -51,9 +53,6 @@ async function start(): Promise<{ state: StateStore; block_num: number; l2_block
   return { state, block_num: meta.block_num, l2_block_id: meta.l2_block_id, verified: true };
 }
 
-/** Upstream pins node:23.3 (V8 float functions differ between releases; see Dockerfile). */
-const UPSTREAM_NODE = "v23.3.";
-
 function makeDuties(svc: Services): ValidatorDuties | null {
   if (config.validatorAccounts.length === 0) return null;
   if (config.validatorMode !== "shadow") throw new Error(`VALIDATOR_MODE=${config.validatorMode} is not supported; only "shadow" exists`);
@@ -76,7 +75,7 @@ function makeDuties(svc: Services): ValidatorDuties | null {
 }
 
 async function main() {
-  if (!process.version.startsWith(UPSTREAM_NODE)) warn("node version differs from upstream's; float results may not match", { node: process.version, upstream: UPSTREAM_NODE + "x" });
+  assertConsensusMathPow();
   log("observer starting", {
     node: process.version,
     seed_file: config.seedFile,
@@ -165,8 +164,9 @@ async function main() {
     duties?.onBlock({ block_num: blockNum, l2_block_id: result.l2_block_id, validator: result.validator, transactions: result.transactions, head_block: headBlock });
 
     const atCheckpoint = config.checkpointDir !== "" && blockNum % config.checkpointEvery === 0;
+    const atSnapshot = config.snapshotDir !== "" && blockNum % config.snapshotEvery === 0;
     let ok: boolean | null = null;
-    if (ref && (atCheckpoint || blockNum % config.verifyEvery === 0)) {
+    if (ref && (atCheckpoint || atSnapshot || blockNum % config.verifyEvery === 0)) {
       ok = await verify(blockNum, result.l2_block_id);
       if (ok === false) process.exit(2);
     }
@@ -175,6 +175,11 @@ async function main() {
       const f = writeCheckpoint(config.checkpointDir, state, { block_num: blockNum, l2_block_id: result.l2_block_id, block_id: block.block_id, verified: ok === true });
       pruneCheckpoints(config.checkpointDir, config.checkpointKeep, config.checkpointKeepEvery);
       log("checkpoint written", { block_num: blockNum, file: f, verified: ok === true, seconds: (Date.now() - t0) / 1000 });
+    }
+    if (atSnapshot && (ok === true || !ref)) {
+      const t0 = Date.now();
+      const manifest = await writeSnapshot(config.snapshotDir, state, { block_num: blockNum, l2_block_id: result.l2_block_id, block_id: block.block_id }, config.snapshotKeep);
+      log("snapshot exported", { block_num: blockNum, file: manifest.file, bytes: manifest.bytes, sha256: manifest.sha256, verified: ok === true, seconds: (Date.now() - t0) / 1000 });
     }
   }
   log("observer stopped", { last_block: lastBlock });

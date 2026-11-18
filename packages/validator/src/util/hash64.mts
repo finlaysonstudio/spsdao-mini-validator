@@ -68,7 +68,8 @@ export class Hash64Map {
     }
   }
 
-  private setHash(a: number, b: number, v: number): void {
+  /** Insert by precomputed hash halves (seed import). */
+  setHash(a: number, b: number, v: number): void {
     if ((this._size + 1) * 2 > this.capacity) this.grow();
     const i = this.slot(a, b);
     if (!this.used[i]) {
@@ -94,6 +95,11 @@ export class Hash64Map {
   has(key: string): boolean {
     return this.get(key) !== undefined;
   }
+
+  /** Every entry as hash halves and value, in slot order (seed export). */
+  *entries(): IterableIterator<[number, number, number]> {
+    for (let i = 0; i < this.capacity; i++) if (this.used[i]) yield [this.lo[i], this.hi[i], this.vals[i]];
+  }
 }
 
 export class Hash64Set {
@@ -109,5 +115,11 @@ export class Hash64Set {
   }
   get size(): number {
     return this.map.size;
+  }
+  addHash(a: number, b: number): void {
+    this.map.setHash(a, b, 1);
+  }
+  *hashes(): IterableIterator<[number, number]> {
+    for (const [a, b] of this.map.entries()) yield [a, b];
   }
 }

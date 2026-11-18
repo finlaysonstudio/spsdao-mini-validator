@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Node <= 23 rejects --no-use-std-math-pow; consensus pow is asserted by src/util/mathpow.spec.mts.
+        node-version: [24.x, 25.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: node --no-use-std-math-pow packages/validator/dist/cli.mjs version
+      - run: sh -n install.sh

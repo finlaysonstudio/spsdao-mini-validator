@@ -7,6 +7,7 @@ import { ACCOUNTS } from "../repos/context.mjs";
 import type { Services } from "../services.mjs";
 import type { BlockRef, BlockRow, CustomJsonPayload, Payout, TransactionEntity } from "../types.mjs";
 import { stringify } from "../util/json.mjs";
+import { assertConsensusMathPow } from "../util/mathpow.mjs";
 import { ActionOrBust, Operation, type CustomJsonOp } from "./operation.mjs";
 import { virtualSources, type VirtualPayloadSource } from "../virtual/sources.mjs";
 
@@ -53,6 +54,8 @@ export class BlockProcessor {
   private readonly sources: VirtualPayloadSource[];
 
   constructor(private readonly svc: Services) {
+    // Refuse to hash blocks when the runtime pow would fork consensus (Node >= 24 without the flag).
+    assertConsensusMathPow();
     this.actionOrBust = new ActionOrBust(new ActionRouter(svc));
     this.sources = virtualSources(svc);
   }

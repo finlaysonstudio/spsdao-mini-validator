@@ -3,9 +3,11 @@
  * logs can be shipped as structured events (Datadog reads `status` as the
  * log level: info / warning / error / ok).
  */
+import type { Writable } from "node:stream";
+
 export type LogFields = Record<string, unknown>;
 
-function emit(stream: NodeJS.WriteStream, status: string, msg: string, fields: LogFields): void {
+function emit(stream: Writable, status: string, msg: string, fields: LogFields): void {
   stream.write(JSON.stringify({ ts: new Date().toISOString(), status, msg, ...fields }) + "\n");
 }
 

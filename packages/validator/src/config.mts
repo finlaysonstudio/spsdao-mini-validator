@@ -31,6 +31,12 @@ export const config = {
   /** Keep this many most recent checkpoints, plus every one on a multiple of CHECKPOINT_KEEP_EVERY. */
   checkpointKeep: envInt("CHECKPOINT_KEEP", 5),
   checkpointKeepEvery: envInt("CHECKPOINT_KEEP_EVERY", 1000000),
+  /** Directory for portable seed exports (format 2, loadable as SEED_FILE; empty = none). */
+  snapshotDir: env("SNAPSHOT_DIR", ""),
+  /** Export a seed every this many blocks (on multiples of it); 28800 ≈ one day. */
+  snapshotEvery: envInt("SNAPSHOT_EVERY", 28800),
+  /** Keep this many most recent seed exports. */
+  snapshotKeep: envInt("SNAPSHOT_KEEP", 3),
   /** Upstream validator API used as hash reference (`/block/:n`); empty = no verification. */
   referenceApi: env("REFERENCE_API", ""),
   /** Verify against the reference every this many blocks (and always before a checkpoint). */

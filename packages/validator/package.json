@@ -12,17 +12,25 @@
     "./config": "./src/config.mts",
     "./types": "./src/types.mts"
   },
+  "bin": {
+    "sps-mini": "dist/cli.mjs"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "prebuild": "npm run clean",
     "build": "tsc",
+    "postbuild": "node -e \"require('node:fs').chmodSync('dist/cli.mjs', 0o755)\"",
     "clean": "rimraf dist",
-    "dbdiff": "tsx tools/dbdiff.mts",
-    "dev": "tsx src/main.mts",
-    "diff-block": "tsx tools/diff-block.mts",
+    "dbdiff": "node --no-use-std-math-pow --import tsx tools/dbdiff.mts",
+    "dev": "node --no-use-std-math-pow --import tsx src/main.mts",
+    "diff-block": "node --no-use-std-math-pow --import tsx tools/diff-block.mts",
+    "export-seed": "node --no-use-std-math-pow --import tsx src/cli.mts export",
     "extract-seed": "tsx tools/extract-seed.mts",
     "lint": "eslint 'src/**/*.mts'",
-    "prebuild": "npm run clean",
     "sort": "sort-package-json",
-    "start": "node dist/main.mjs",
+    "start": "node --no-use-std-math-pow dist/main.mjs",
     "start:check": "node dist/check.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -45,6 +53,6 @@
     "typescript": "^5.7.0"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   }
 }

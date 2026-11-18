@@ -1,22 +1,25 @@
 /**
  * Seed loader. The seed is NDJSON: one `{"t": <table>, "r": <row>}` per line,
- * first line `{"t":"meta", ...}`. See tools/extract-seed.mts for the writer.
+ * first line `{"t":"meta", ...}`. Writers: tools/extract-seed.mts (format 1, from Postgres) and
+ * bootstrap/export.mts (format 2, from memory; adds `hash64`, `hive_account_authority` and `promise_closed_tables` rows).
  */
 import { createReadStream } from "node:fs";
+import type { Readable } from "node:stream";
 import { createInterface } from "node:readline";
 import { createGunzip } from "node:zlib";
 import type { StateStore } from "../state/index.mjs";
 import { toScaled } from "../util/num.mjs";
+import { unpackU32 } from "./export.mjs";
 import { log } from "../util/log.mjs";
 
-export type SeedMeta = { block_num: number; l2_block_id: string; block_id: string; extracted_at: string };
+export type SeedMeta = { block_num: number; l2_block_id: string; block_id: string; extracted_at: string; format?: number };
 
 const d = (v: string | null): Date | null => (v === null || v === undefined ? null : new Date(v));
 
 export async function loadSeed(state: StateStore, path: string): Promise<SeedMeta> {
   let meta: SeedMeta | undefined;
   const counts: Record<string, number> = {};
-  let input: NodeJS.ReadableStream = createReadStream(path);
+  let input: Readable = createReadStream(path);
   if (path.endsWith(".gz")) input = input.pipe(createGunzip());
   const rl = createInterface({ input, crlfDelay: Infinity });
   for await (const line of rl) {
@@ -39,6 +42,9 @@ export async function loadSeed(state: StateStore, path: string): Promise<SeedMet
       case "hive_accounts":
         state.hiveAccounts.add(r.name);
         if (r.authority) state.hiveAccounts.setAuthority(r.name, r.authority);
+        break;
+      case "hive_account_authority":
+        state.hiveAccounts.setAuthority(r.name, r.authority);
         break;
       case "validators":
         state.validators.set({ ...r, total_votes: toScaled(r.total_votes, 3) });
@@ -93,6 +99,22 @@ export async function loadSeed(state: StateStore, path: string): Promise<SeedMet
       case "rental_ids":
         state.rentals.rememberId(r.id);
         break;
+      case "promise_closed_tables":
+        state.promises.setClosedTables(r);
+        break;
+      case "hash64": {
+        const lo = unpackU32(r.lo);
+        const hi = unpackU32(r.hi);
+        const val = r.val ? unpackU32(r.val) : null;
+        if (hi.length !== lo.length || (val && val.length !== lo.length)) throw new Error(`seed hash64 ${r.set}: length mismatch`);
+        for (let i = 0; i < lo.length; i++) {
+          if (r.set === "hive_accounts") state.hiveAccounts.addHash(lo[i], hi[i]);
+          else if (r.set === "rental_ids") state.rentals.addIdHash(lo[i], hi[i]);
+          else if (r.set === "promise_closed" && val) state.promises.addClosedHash(lo[i], hi[i], val[i] | 0);
+          else throw new Error(`seed hash64: unknown set ${r.set}`);
+        }
+        break;
+      }
       default:
         throw new Error(`unknown seed table ${t}`);
     }

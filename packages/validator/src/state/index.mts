@@ -101,6 +101,19 @@ export class HiveAccounts {
     this.authority.set(name, authority);
   }
 
+  /** Names are stored only as 64-bit hashes; export/import them as such. */
+  nameHashes(): IterableIterator<[number, number]> {
+    return this.names.hashes();
+  }
+
+  addHash(a: number, b: number): void {
+    this.names.addHash(a, b);
+  }
+
+  authorities(): IterableIterator<[string, Record<string, string[]>]> {
+    return this.authority.entries();
+  }
+
   get size(): number {
     return this.names.size;
   }
@@ -146,6 +159,11 @@ export class Votes {
     const m = this.byVoter.get(voter);
     if (!m) return [];
     return Array.from(m.entries()).map(([validator, vote_weight]) => ({ voter, validator, vote_weight }));
+  }
+
+  /** Every vote row, in insertion order. */
+  *rows(): IterableIterator<{ voter: string; validator: string; vote_weight: bigint }> {
+    for (const [voter, m] of this.byVoter) for (const [validator, vote_weight] of m) yield { voter, validator, vote_weight };
   }
 
   /** Every voter with at least one vote (unordered). */
@@ -254,6 +272,10 @@ export class Unstaking {
 
   active(): UnstakingRow[] {
     return Array.from(this.map.values()).filter((r) => r.is_active);
+  }
+
+  all(): UnstakingRow[] {
+    return Array.from(this.map.values());
   }
 
   /** Drop inactive rows to bound memory (they are never read again). */
@@ -386,6 +408,27 @@ export class Promises {
     this.closed.set(this.key(type, id), packed);
   }
 
+  /** Lookup tables the packed closed values index into. */
+  closedTables(): { lenders: string[]; controller_sets: string[][] } {
+    return { lenders: this.lenders.slice(), controller_sets: this.controllerSets.map((c) => c.slice()) };
+  }
+
+  /** Replace the lookup tables (seed import, before addClosedHash). */
+  setClosedTables(t: { lenders: string[]; controller_sets: string[][] }): void {
+    this.lenders = t.lenders.slice();
+    this.lenderIdx = new Map(this.lenders.map((l, i) => [l, i + 1]));
+    this.controllerSets = t.controller_sets.map((c) => c.slice());
+    this.controllerIdx = new Map(this.controllerSets.map((c, i) => [c.join(","), i]));
+  }
+
+  closedEntries(): IterableIterator<[number, number, number]> {
+    return this.closed.entries();
+  }
+
+  addClosedHash(a: number, b: number, packed: number): void {
+    this.closed.setHash(a, b, packed);
+  }
+
   liveRows(): PromiseRow[] {
     return Array.from(this.live.values());
   }
@@ -469,7 +512,9 @@ export class Rentals {
     const row = this.active.get(id);
     if (!row) return;
     this.active.delete(id);
-    this.byPair.get(this.pairKey(row.lender, row.borrower, row.token))?.delete(id);
+    const pk = this.pairKey(row.lender, row.borrower, row.token);
+    this.byPair.get(pk)?.delete(id);
+    if (this.byPair.get(pk)?.size === 0) this.byPair.delete(pk);
     this.byExpiration.get(row.expiration_block)?.delete(id);
     if (this.byExpiration.get(row.expiration_block)?.size === 0) this.byExpiration.delete(row.expiration_block);
   }
@@ -508,6 +553,18 @@ export class Rentals {
 
   get activeCount(): number {
     return this.active.size;
+  }
+
+  activeRows(): IterableIterator<RentalRow> {
+    return this.active.values();
+  }
+
+  idHashes(): IterableIterator<[number, number]> {
+    return this.allIds.hashes();
+  }
+
+  addIdHash(a: number, b: number): void {
+    this.allIds.addHash(a, b);
   }
 }
 
@@ -567,6 +624,10 @@ export class Delegations {
   get size(): number {
     return this.map.size;
   }
+
+  rows(): IterableIterator<DelegationRow> {
+    return this.map.values();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -589,6 +650,13 @@ export class RewardDebts {
 
   sum(pool: string): bigint {
     return this.sums.get(pool) ?? 0n;
+  }
+
+  *rows(): IterableIterator<{ pool_name: string; player: string; reward_debt: bigint }> {
+    for (const [k, reward_debt] of this.map) {
+      const i = k.indexOf(SEP);
+      yield { pool_name: k.slice(0, i), player: k.slice(i + 1), reward_debt };
+    }
   }
 
   /** SUM() over an empty set is NULL in SQL. */
@@ -647,6 +715,11 @@ export class Blocks {
     }
   }
 
+  /** Retained rows in insertion order. */
+  rows(): IterableIterator<BlockRow> {
+    return this.map.values();
+  }
+
   getLatestBlockNum(): number {
     return this.latest;
   }
@@ -678,6 +751,12 @@ export class TransferKeys {
   }
   add(account: string, key: string): void {
     this.set.add(account + SEP + key);
+  }
+  *rows(): IterableIterator<{ account: string; key: string }> {
+    for (const k of this.set) {
+      const i = k.indexOf(SEP);
+      yield { account: k.slice(0, i), key: k.slice(i + 1) };
+    }
   }
 }
 

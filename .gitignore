@@ -9,7 +9,6 @@ dist/
 # Keep config files
 !eslint.config.mjs
 !vitest.config.ts
-!vitest.workspace.ts
 !vite.config.ts
 
 # Env

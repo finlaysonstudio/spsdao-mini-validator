@@ -1,9 +1,9 @@
 # Minimal SPS validator observer: computes L2 block hashes in memory, no database, no web UI.
 #
-# The Node version must match upstream's (apps/sps-validator/Dockerfile: node:23.3-alpine3.20):
-# V8's Math.pow / ** differs between releases in the last ulp (0.99 ** 32 is ...535 on 23.3 and
-# ...534 on 26), and upstream feeds such floats straight into hashed events.
-FROM node:23.3-alpine3.20 AS dev
+# Node 24 must run with --no-use-std-math-pow: V8's default std::pow is 1 ulp off upstream's
+# node:23.3 (0.99 ** 32 is ...534 instead of ...535), and upstream feeds such floats into hashed
+# events. The flag is rejected in NODE_OPTIONS; BlockProcessor refuses to start without it.
+FROM node:24.22.2-alpine AS dev
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/validator/package.json packages/validator/
@@ -14,11 +14,11 @@ RUN npm run build --workspace packages/validator
 FROM dev AS build
 RUN npm prune --omit=dev --workspace packages/validator --include-workspace-root
 
-FROM node:23.3-alpine3.20
+FROM node:24.22.2-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages/validator/dist ./packages/validator/dist
 COPY --from=build /app/packages/validator/package.json ./packages/validator/package.json
 USER node
-CMD ["node", "--max-old-space-size=3072", "packages/validator/dist/main.mjs"]
+CMD ["node", "--no-use-std-math-pow", "--max-old-space-size=3072", "packages/validator/dist/main.mjs"]

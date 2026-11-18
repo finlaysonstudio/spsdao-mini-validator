@@ -84,7 +84,7 @@ export const token_award = new Schema(
   object({
     to: hiveUsernameOrSystemAccount.required(),
     from: hiveUsernameOrSystemAccount.required(),
-    token: token,
+    token,
     qty: qty.positive(),
   }),
 );
@@ -94,7 +94,7 @@ export const token_transfer = new Schema(
   "token_transfer",
   object({
     to: hiveUsernameOrSystemAccount.required(),
-    token: token,
+    token,
     qty: qty.positive(),
     key: tokenTransferKey,
   }),
@@ -105,7 +105,7 @@ export const burn = new Schema(
   object({
     account: hiveUsernameOrSystemAccount.required(),
     to: systemAccount.required(),
-    token: token,
+    token,
     qty: qty.positive(),
   }),
 );
@@ -116,7 +116,7 @@ export const token_transfer_multi = new Schema(
     type: string().strict().optional(),
     multi: array(
       object({
-        token: token,
+        token,
         to: array(
           object({
             name: hiveUsernameOrSystemAccount.required(),
@@ -134,7 +134,7 @@ export const token_transfer_multi = new Schema(
 export const delegate_tokens = new Schema(
   "delegate_tokens",
   object({
-    token: token,
+    token,
     to: hiveUsernameOrSystemAccount.required(),
     qty: qty.positive(),
     player: hiveAccount.optional(),
@@ -144,7 +144,7 @@ export const delegate_tokens = new Schema(
 export const undelegate_tokens = new Schema(
   "undelegate_tokens",
   object({
-    token: token,
+    token,
     from: hiveUsernameOrSystemAccount.required(),
     qty: qty.positive(),
     player: hiveAccount.optional(),
@@ -154,7 +154,7 @@ export const undelegate_tokens = new Schema(
 export const return_tokens = new Schema(
   "return_tokens",
   object({
-    token: token,
+    token,
     from: hiveUsernameOrSystemAccount.required(),
     qty: qty.positive(),
     player: hiveAccount.optional(),
@@ -164,7 +164,7 @@ export const return_tokens = new Schema(
 export const undelegate_tokens_multi = new Schema(
   "undelegate_tokens_multi",
   object({
-    token: token,
+    token,
     data: array(object({ from: hiveUsernameOrSystemAccount.required(), qty: qty.positive() }))
       .required()
       .min(1),
@@ -175,7 +175,7 @@ export const undelegate_tokens_multi = new Schema(
 export const stake_tokens = new Schema(
   "stake_tokens",
   object({
-    token: token,
+    token,
     to_player: hiveUsernameOrSystemAccount,
     from_player: systemAccount.optional(),
     qty: qty.positive(),
@@ -185,7 +185,7 @@ export const stake_tokens = new Schema(
 export const stake_tokens_multi = new Schema(
   "stake_tokens_multi",
   object({
-    token: token,
+    token,
     to_player: hiveUsernameOrSystemAccount,
     multi: array(
       object({
@@ -201,7 +201,7 @@ export const stake_tokens_multi = new Schema(
 export const unstake_tokens = new Schema(
   "unstake_tokens",
   object({
-    token: token,
+    token,
     qty: qty.positive(),
   }),
 );
@@ -209,7 +209,7 @@ export const unstake_tokens = new Schema(
 export const cancel_unstake_tokens = new Schema(
   "cancel_unstake_tokens",
   object({
-    token: token,
+    token,
   }),
 );
 
@@ -234,7 +234,7 @@ export const token_unstaking = new Schema(
   object({
     player: hiveUsernameOrSystemAccount.required(),
     unstake_amount: qty.positive(),
-    token: token,
+    token,
     update: updateFn,
   }),
 );
@@ -283,7 +283,7 @@ export const price_feed = new Schema(
     updates: array()
       .of(
         object({
-          token: token,
+          token,
           price: qty.positive().required(),
         }),
       )
@@ -305,13 +305,13 @@ export const shop_purchase = new Schema(
     id: string().strict().required(),
     qty: qty.positive().required(),
     discount_token: object({
-      token: token,
+      token,
       qty: qty.integer().positive().required(),
     })
       .optional()
       .default(undefined),
     bonus_token: object({
-      token: token,
+      token,
       qty: qty.integer().positive().required(),
     })
       .optional()
@@ -495,7 +495,7 @@ export const transition_cancel_delegation_promises = transitionSchema("transitio
 
 /** Schemas used by delegation offer promises (features/delegation). */
 export const delegation_offer_params_schema = object({
-  token: token,
+  token,
   qty: qty.positive(),
   lender: hiveAccount.required(),
   price: qty.positive(),
@@ -512,7 +512,7 @@ export const delegation_offer_fulfill_metadata_schema = object({
 
 /** Legacy delegation promise params (features/delegation/delegation_promises.ts). */
 export const delegation_promise_params_schema = object({
-  token: token,
+  token,
   qty: qty.positive(),
   to: hiveAccount.required(),
   player: hiveAccount.optional(),

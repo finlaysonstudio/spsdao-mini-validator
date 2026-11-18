@@ -3,10 +3,42 @@
 A minimal, in-memory port of the [TheSPSDAO/SPS-Validator](https://github.com/TheSPSDAO/SPS-Validator)
 block-processing core. It replays Hive blocks, applies every SPS layer-2 action and virtual
 operation exactly as the upstream validator does, and computes the same L2 block hash, with
-no database, no web UI, and no broadcasting.
+no database, no web UI, and no broadcasting. It exports portable snapshots that other nodes
+start from.
 
 Target: hash-for-hash parity with upstream **1.5.1** (verified continuously against a running
 upstream node's Postgres with `tools/dbdiff.mts`).
+
+## Install
+
+Docker (recommended; Node 24 image for linux/amd64 and linux/arm64):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validator/main/install.sh | sh
+```
+
+Bare metal (Node 24+; installs the `sps-mini` CLI with npm and a systemd user unit or launchd agent):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validator/main/install.sh | sh -s -- --bare-metal
+```
+
+| Option | Effect |
+|---|---|
+| `--accounts a,b` | Shadow-mode duties for these validator accounts (no keys are read) |
+| `--genesis` | Start from the genesis seed (block 93703455) and replay to head: trustless, hours, ~6 GB chunk cache |
+| `--dir DIR` | Install directory (default `~/.sps-mini`) |
+| `--version vX.Y.Z` | Release tag (default latest) |
+| `--no-start` | Write files only |
+
+The installer downloads `seed-latest.ndjson.gz` (or `seed-genesis.ndjson.gz`) from the GitHub
+release, checks it against the release's `SHA256SUMS`, writes `.env` (mode 600) and starts the
+service. `sps-mini verify <seed>` also checks a seed's hash against the Splinterlands archive API.
+Configuration lives in `<dir>/.env` (see Environment).
+
+Releases (`.github/workflows/release.yml`, on tag `v*`): multi-arch image on GHCR, npm tarball,
+`install.sh`, seeds carried forward from the previous release. `scripts/publish-seed.sh <seed>
+[--genesis]` verifies a seed and replaces the release's seed assets and `SHA256SUMS`.
 
 ## How it works
 
@@ -32,6 +64,12 @@ that arithmetic matches Postgres `numeric` exactly, while every place upstream d
 math in JavaScript is reproduced as float math here.
 
 ## Running
+
+Requires Node 24+ started with `--no-use-std-math-pow` (the package scripts and the Docker image
+pass it). Since Node 24, V8's default `Math.pow` is 1 ulp off upstream's Node 23.3 on inputs such as
+`0.99 ** 32`, which forks the staking reward hash; the flag restores V8's internal pow. It is a V8
+flag and is rejected in `NODE_OPTIONS`. Block processing refuses to start when the runtime fails
+the check (`src/util/mathpow.mts`).
 
 ```sh
 npm install
@@ -77,6 +115,26 @@ the database.
 | `HASH_LOG` | (none) | Append `block_num l2_block_id` lines here |
 | `STOP_BLOCK` | 0 | Stop after this block |
 | `CUSTOM_JSON_ID` / `CUSTOM_JSON_PREFIX` | `sm_sps` / `sm_` | Upstream operation ids |
+| `SNAPSHOT_DIR` | (none) | Export a portable seed here (see Snapshots) |
+| `SNAPSHOT_EVERY` | 28800 | Export on multiples of this block number (≈ daily) |
+| `SNAPSHOT_KEEP` | 3 | Seed exports kept in `SNAPSHOT_DIR` |
+
+## Snapshots
+
+A snapshot is a seed that `SEED_FILE` loads, so any node can start from another node's state
+instead of an upstream database or the genesis replay.
+
+- **Format 2** (written from memory) = the format-1 rows `extract-seed` writes from Postgres plus
+  `hash64` rows (hive account names, closed promises and rental ids, which this port stores only as
+  64-bit hashes), `hive_account_authority` and `promise_closed_tables`. Rows keep each store's
+  iteration order. Unlike checkpoints (`.v8.gz`, V8 serialization of this build's classes), seeds
+  are independent of the Node version and of internal field layout.
+- With `SNAPSHOT_DIR` set, the runner writes `seed-<block>.ndjson.gz`, `seed-<block>.manifest.json`
+  (`block_num`, `l2_block_id`, `bytes`, `sha256`, ...) and `latest.json`. With `REFERENCE_API` set,
+  the block is verified first and nothing is exported on a mismatch.
+- From a checkpoint: `npm run export-seed --workspace packages/validator -- <checkpoint-dir> <out.ndjson.gz> [block] --verify`.
+  `--verify` reloads the seed and compares every store field with the checkpoint (`src/state/compare.mts`).
+- Size and speed at block 111770000: 63 MB, export 14 s, load 3.6 s.
 
 ## Validator duties (shadow mode)
 
