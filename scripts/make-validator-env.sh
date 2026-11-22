@@ -1,5 +1,5 @@
 #!/bin/sh
-# Write LOCAL/validator.env with the validator posting key, read from a running node's
+# Write var/validator.env with the validator posting key, read from a running node's
 # container environment (default: the upstream validator). Nothing is printed.
 # The validator stays in shadow mode until VALIDATOR_MODE=live is added to that file.
 #
@@ -7,7 +7,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 container=${1:-splinterlands-validator-validator-1}
-out=${2:-LOCAL/validator.env}
+out=${2:-var/validator.env}
 mkdir -p "$(dirname "$out")"
 umask 077
 key=$(docker inspect "$container" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^VALIDATOR_KEY=//p')

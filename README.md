@@ -75,16 +75,16 @@ the check (`src/util/mathpow.mts`).
 npm install
 # extract a seed from a running upstream validator database
 PGHOST=127.0.0.1 PGUSER=... PGPASSWORD=... PGDATABASE=validator \
-  npm run extract-seed --workspace packages/validator -- LOCAL/seed.ndjson
-gzip -k LOCAL/seed.ndjson
+  npm run extract-seed --workspace packages/validator -- var/seed.ndjson
+gzip -k var/seed.ndjson
 # observe
-SEED_FILE=LOCAL/seed.ndjson.gz HASH_LOG=LOCAL/hashes.log npm run dev --workspace packages/validator
+SEED_FILE=var/seed.ndjson.gz HASH_LOG=var/hashes.log npm run dev --workspace packages/validator
 ```
 
 Container (shadow mode by default; keys only in live mode):
 
 ```sh
-mkdir -p LOCAL/validator && cp LOCAL/seed.ndjson.gz LOCAL/validator/
+mkdir -p var/validator && cp var/seed.ndjson.gz var/validator/
 docker compose up -d --build
 docker compose logs -f validator
 ```
@@ -92,14 +92,14 @@ docker compose logs -f validator
 ### Backtesting against a running upstream node
 
 ```sh
-FOLLOW=1 CONTINUE_ON_MISMATCH=1 SEED_FILE=LOCAL/seed.ndjson BLOCK_CACHE_DIR=LOCAL/blockcache \
+FOLLOW=1 CONTINUE_ON_MISMATCH=1 SEED_FILE=var/seed.ndjson BLOCK_CACHE_DIR=var/blockcache \
   PGHOST=... npm run dbdiff --workspace packages/validator
 ```
 
 The harness replays from the seed and compares, for every block, each
 `validator_transactions` row (id, type, player, data, success, error, result, index), the
 chosen validator and `blocks.l2_block_id`. It follows the upstream chain after a mismatch so
-one divergence does not cascade. `LOCAL/check-hashes.sh` compares a container's hash log with
+one divergence does not cascade. `var/check-hashes.sh` compares a container's hash log with
 the database.
 
 ## Environment
@@ -174,7 +174,7 @@ account. Every `validate_block` and `check_in_validator` transaction is built ex
 |----------|---------|---------|
 | `VALIDATOR_ACCOUNTS` | (none) | Comma-separated validator accounts (`VALIDATOR_ACCOUNT` also accepted); empty disables duties |
 | `VALIDATOR_MODE` | `shadow` | `shadow` (log only) or `live` (sign and broadcast) |
-| `VALIDATOR_KEY` | (none) | Live mode: posting key WIFs, comma-separated. In the container, `LOCAL/validator.env` (`scripts/make-validator-env.sh`) |
+| `VALIDATOR_KEY` | (none) | Live mode: posting key WIFs, comma-separated. In the container, `var/validator.env` (`scripts/make-validator-env.sh`) |
 | `VALIDATE_BLOCK_DELAY` | 0 | 0 = leader; `N` = follower that waits `N` blocks |
 | `ENABLE_CHECK_INS` | `true` | Check in for the listed accounts |
 | `CHECK_IN_RETRY_BLOCKS` | 100 | Re-send an unconfirmed check-in after this many blocks |
@@ -239,7 +239,7 @@ The `checker` service compares the newest `CHECK_WINDOW` lines of `hashes.log` w
 | `warning` | `catching_up` | more than `CHECK_MAX_LAG` behind but replaying faster than the chain (normal for a few minutes after a restart) |
 | `warning` | `no_log`, `no_overlap`, `db_error` | nothing could be compared (empty log, blocks not in the DB yet, or Postgres unreachable) |
 
-The checker joins the upstream compose network (`validator:postgres`) and reads credentials from `LOCAL/checker.env`, created with `scripts/make-checker-env.sh` from the running `pg` container's environment. The file is mode 600 and gitignored.
+The checker joins the upstream compose network (`validator:postgres`) and reads credentials from `var/checker.env`, created with `scripts/make-checker-env.sh` from the running `pg` container's environment. The file is mode 600 and gitignored.
 
 ## Known gaps
 

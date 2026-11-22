@@ -39,4 +39,4 @@ Postgres is the ground truth for backtests. See README.md for usage.
 - jsonb values are canonicalised (keys by length then bytewise, no exponents).
 - Virtual sources run before block operations and compute payloads against block-start state.
 - Anything not ported throws `UnsupportedPathError`; never silently approximate.
-- `LOCAL/` holds seeds, block cache and logs and is gitignored.
+- `var/` holds seeds, block cache and logs and is gitignored.
