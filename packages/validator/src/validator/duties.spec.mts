@@ -121,6 +121,30 @@ describe("chain observation", () => {
     expect(e.fields).toMatchObject({ match: false, intent_match: false });
   });
 
+  it("shadow mode has no signer to compare", () => {
+    const duties = make();
+    const l2 = block(duties, 1000, { validator: "alpha" });
+    block(duties, 1001, { transactions: [tx({ type: "validate_block", player: "alpha", params: { block_num: 1000, hash: l2, version: "1.5.1" } })] });
+    expect(rec.msgs("observed validation")[0].fields.signer).toBeNull();
+    expect(rec.msgs("foreign signer")).toEqual([]);
+  });
+
+  it("live mode tells its own transactions from another signer's", () => {
+    const own = new Set(["trx-validate_block-alpha"]);
+    const broadcaster = { mode: "live" as const, send: rec.broadcaster.send, isOwnTransaction: (id: string) => own.has(id) };
+    const duties = make({ broadcaster, accounts: ["alpha", "beta"] });
+    const a = block(duties, 1000, { validator: "alpha" });
+    const b = block(duties, 1001, { validator: "beta" });
+    block(duties, 1002, {
+      transactions: [tx({ type: "validate_block", player: "alpha", params: { block_num: 1000, hash: a, version: "test" } }), tx({ type: "validate_block", player: "beta", params: { block_num: 1001, hash: b, version: "1.5.1-firehorse.0" } })],
+    });
+    expect(rec.msgs("observed validation").map((e) => [e.fields.account, e.fields.signer, e.status])).toEqual([
+      ["alpha", "self", "ok"],
+      ["beta", "other", "ok"],
+    ]);
+    expect(rec.msgs("foreign signer").map((e) => [e.status, e.fields.account, e.fields.version])).toEqual([["warning", "beta", "1.5.1-firehorse.0"]]);
+  });
+
   it("ignores accounts that are not configured", () => {
     const duties = make();
     block(duties, 1000, { transactions: [tx({ type: "validate_block", player: "beta", params: { block_num: 999, hash: "x", version: "1" } })] });

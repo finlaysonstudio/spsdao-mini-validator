@@ -16,11 +16,15 @@ services:
       CUSTOM_JSON_PREFIX: sm_
       BLOCKS_BEHIND_HEAD: "6"
       BLOCKS_HEAD_MODE: irreversible
-      # Shadow mode: compute and log validations/check-ins for these accounts; nothing is sent.
+      # Validator duties for these accounts. VALIDATOR_MODE (default shadow: compute and log,
+      # send nothing) and VALIDATOR_KEY come from LOCAL/validator.env
+      # (scripts/make-validator-env.sh); VALIDATOR_MODE=live there signs and broadcasts.
       VALIDATOR_ACCOUNTS: nullfame
-      VALIDATOR_MODE: shadow
       VALIDATE_BLOCK_DELAY: "0"
       DUTY_LOG: /data/duties.log
+    env_file:
+      - path: ./LOCAL/validator.env
+        required: false
     volumes:
       - ./LOCAL/observer:/data
     mem_limit: 4g

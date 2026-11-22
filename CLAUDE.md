@@ -5,7 +5,8 @@ Guidance for Claude Code when working in this repository.
 ## What this is
 
 A minimal in-memory port of the TheSPSDAO/SPS-Validator block processor (target upstream
-1.5.1) that computes identical L2 block hashes with no database, web UI or broadcasting.
+1.5.1) that computes identical L2 block hashes with no database or web UI, and performs
+validator duties in shadow mode (log only) or live (signs and broadcasts; `src/validator/broadcast.mts`).
 The upstream source is checked out at `~/Code/SPS-Validator`; a running upstream node's
 Postgres is the ground truth for backtests. See README.md for usage.
 

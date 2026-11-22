@@ -18,8 +18,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * pass over the nodes without success it backs off exponentially (public nodes
  * answer bursts with HTTP 429), and only gives up after `rpcRetryDeadlineMs`.
  */
-async function rpcCall<T>(method: string, params: unknown, preferredNode?: string): Promise<T> {
-  const deadline = Date.now() + config.rpcRetryDeadlineMs;
+async function rpcCall<T>(method: string, { params, node: preferredNode, deadlineMs = config.rpcRetryDeadlineMs }: { params: unknown; node?: string; deadlineMs?: number }): Promise<T> {
+  const deadline = Date.now() + deadlineMs;
   let lastError: Error | null = null;
 
   for (let attempt = 0; ; attempt++) {
@@ -67,10 +67,7 @@ async function rpcCall<T>(method: string, params: unknown, preferredNode?: strin
 }
 
 export async function getBlock(blockNum: number): Promise<HiveBlock | null> {
-  const result = await rpcCall<{ block: HiveBlock | null }>(
-    "block_api.get_block",
-    { block_num: blockNum },
-  );
+  const result = await rpcCall<{ block: HiveBlock | null }>("block_api.get_block", { params: { block_num: blockNum } });
   return result?.block ?? null;
 }
 
@@ -78,7 +75,7 @@ export async function getHeadBlockNum(): Promise<number> {
   const result = await rpcCall<{
     head_block_number?: number;
     last_irreversible_block_num?: number;
-  }>("condenser_api.get_dynamic_global_properties", []);
+  }>("condenser_api.get_dynamic_global_properties", { params: [] });
 
   if (config.blocksHeadMode === "irreversible") {
     return (result.last_irreversible_block_num ?? 0) - config.blocksBehindHead;
@@ -98,6 +95,27 @@ export async function getBlocks(
 
 /** block_api.get_block_range (at most 1000 blocks per call). */
 export async function getBlockRange(startBlock: number, count: number, node?: string): Promise<HiveBlock[]> {
-  const result = await rpcCall<{ blocks?: HiveBlock[] }>("block_api.get_block_range", { starting_block_num: startBlock, count }, node);
+  const result = await rpcCall<{ blocks?: HiveBlock[] }>("block_api.get_block_range", { params: { starting_block_num: startBlock, count }, node });
   return result?.blocks ?? [];
+}
+
+export type DynamicGlobalProperties = { head_block_number: number; head_block_id: string; time: string; last_irreversible_block_num: number };
+
+export async function getDynamicGlobalProperties({ deadlineMs }: { deadlineMs?: number } = {}): Promise<DynamicGlobalProperties> {
+  return rpcCall<DynamicGlobalProperties>("condenser_api.get_dynamic_global_properties", { params: [], deadlineMs });
+}
+
+export type Authority = { weight_threshold: number; account_auths: [string, number][]; key_auths: [string, number][] };
+export type HiveAccount = { name: string; posting: Authority };
+
+export async function getAccounts(names: string[]): Promise<HiveAccount[]> {
+  return rpcCall<HiveAccount[]>("condenser_api.get_accounts", { params: [names] });
+}
+
+/**
+ * Broadcast a signed transaction, rotating nodes on failure until `deadlineMs`. Resending the
+ * same signed transaction is safe: a node that already has it answers "duplicate".
+ */
+export async function broadcastTransaction(tx: unknown, { deadlineMs = 20_000 }: { deadlineMs?: number } = {}): Promise<void> {
+  await rpcCall<unknown>("condenser_api.broadcast_transaction", { params: [tx], deadlineMs });
 }

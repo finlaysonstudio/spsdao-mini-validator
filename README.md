@@ -3,8 +3,8 @@
 A minimal, in-memory port of the [TheSPSDAO/SPS-Validator](https://github.com/TheSPSDAO/SPS-Validator)
 block-processing core. It replays Hive blocks, applies every SPS layer-2 action and virtual
 operation exactly as the upstream validator does, and computes the same L2 block hash, with
-no database, no web UI, and no broadcasting. It exports portable snapshots that other nodes
-start from.
+no database and no web UI. It can perform a validator's duties (block validation, check-ins) in
+shadow mode or live. It exports portable snapshots that other nodes start from.
 
 Target: hash-for-hash parity with upstream **1.5.1** (verified continuously against a running
 upstream node's Postgres with `tools/dbdiff.mts`).
@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validat
 
 | Option | Effect |
 |---|---|
-| `--accounts a,b` | Shadow-mode duties for these validator accounts (no keys are read) |
+| `--accounts a,b` | Shadow-mode duties for these validator accounts (no keys are read; live mode is set in the env file) |
 | `--genesis` | Start from the genesis seed (block 93703455) and replay to head: trustless, hours, ~6 GB chunk cache |
 | `--dir DIR` | Install directory (default `~/.sps-mini`) |
 | `--version vX.Y.Z` | Release tag (default latest) |
@@ -136,12 +136,20 @@ instead of an upstream database or the genesis replay.
   `--verify` reloads the seed and compares every store field with the checkpoint (`src/state/compare.mts`).
 - Size and speed at block 111770000: 63 MB, export 14 s, load 3.6 s.
 
-## Validator duties (shadow mode)
+## Validator duties
 
 With `VALIDATOR_ACCOUNTS` set, the observer also performs the validator's duties for each listed
-account, in **shadow mode**: every `validate_block` and `check_in_validator` transaction is built
-exactly as upstream's `HiveClient` would broadcast it and logged, but nothing is signed or sent and
-no key is read.
+account. Every `validate_block` and `check_in_validator` transaction is built exactly as upstream's
+`HiveClient` broadcasts it (one `custom_json`, `id: sm_sps`, posting authority).
+
+- **Shadow mode** (default): transactions are logged; nothing is signed or sent and no key is read.
+- **Live mode** (`VALIDATOR_MODE=live`): transactions are signed with `VALIDATOR_KEY` (posting key
+  WIF) and broadcast, referencing the head block and expiring 60 s after it. Signatures are
+  byte-identical to dhive's (`src/hive/signing.spec.mts`). At startup the key must satisfy every
+  listed account's posting authority on its own, directly or through an `account_auths` grant;
+  otherwise the process exits. The key is removed from the environment once read and never logged.
+
+Price feeds (upstream `PriceFeedPlugin`, top validators only) are not implemented.
 
 - **Block validation** (upstream `processor.ts`): when the seeded PRNG picks a listed account for a
   block within `max_block_age` of the head, send `{block_num, hash, version}`.
@@ -158,14 +166,15 @@ no key is read.
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `VALIDATOR_ACCOUNTS` | (none) | Comma-separated validator accounts (`VALIDATOR_ACCOUNT` also accepted); empty disables duties |
-| `VALIDATOR_MODE` | `shadow` | Only `shadow` exists |
+| `VALIDATOR_MODE` | `shadow` | `shadow` (log only) or `live` (sign and broadcast) |
+| `VALIDATOR_KEY` | (none) | Live mode: posting key WIF for the listed accounts. In the container, `LOCAL/validator.env` (`scripts/make-validator-env.sh`) |
 | `VALIDATE_BLOCK_DELAY` | 0 | 0 = leader; `N` = follower that waits `N` blocks |
 | `ENABLE_CHECK_INS` | `true` | Check in for the listed accounts |
 | `CHECK_IN_RETRY_BLOCKS` | 100 | Re-send an unconfirmed check-in after this many blocks |
 | `VALIDATOR_VERSION` | `1.5.1-mini.0` | `version` param (recorded on chain as the validator's `last_version`) |
 | `DUTY_LOG` | (none) | Also append duty events (JSONL) to this file |
 
-Duty log lines (`mode: "shadow"`):
+Duty log lines (`mode: "shadow"` or `"live"`):
 
 | msg | status | meaning |
 |---|---|---|
@@ -174,6 +183,10 @@ Duty log lines (`mode: "shadow"`):
 | `observed validation` | ok / error | on-chain `validate_block` by a listed account; `match` = its hash equals ours, `intent_match` = equals what we would have sent |
 | `observed check-in` | ok / error | on-chain check-in; `match` = its hash equals ours for that block; `blocks_from_intent` = how far it landed from our intended block |
 | `validation missed` | error | a block we would have validated passed `max_block_age` with no validation on chain |
+| `posting authority verified` | info | live startup: the key's public key and how it holds each account's posting authority |
+| `broadcast sent` | info | live: the node accepted the transaction; `trx_id`, `expiration`, `ms`, `duplicate` when a retry found it already accepted |
+| `broadcast failed` | error | live: `stage` `prepare` (no head block) or `send` (rejected or unreachable); `error` |
+| `foreign signer` | warning | live: a validation or check-in for a listed account on chain that this process did not sign (a follower filling in, or another node still holding the key); `signer` is also on `observed …` lines |
 
 ## Logs and health check
 

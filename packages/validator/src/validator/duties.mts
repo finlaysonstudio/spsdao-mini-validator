@@ -4,7 +4,8 @@
  * Ports upstream's block-validation submission (validator/src/processor.ts) and
  * ValidatorCheckInPlugin (features/validator/license-plugin.ts), with Fire Horse's
  * leader/follower delay and deterministic check-in jitter, generalised to several
- * accounts. Every send goes through a Broadcaster; the shadow broadcaster only logs.
+ * accounts. Every send goes through a Broadcaster; the shadow broadcaster only logs, the
+ * live one (broadcast.mts) signs and sends.
  *
  * It also watches the chain for validate_block / check_in_validator transactions
  * signed by the configured accounts (sent by another node, e.g. the upstream
@@ -26,8 +27,10 @@ export type BroadcastRequest = {
 };
 
 export interface Broadcaster {
-  readonly mode: "shadow";
+  readonly mode: "shadow" | "live";
   send(request: BroadcastRequest): void;
+  /** Live only: whether this process signed the transaction. */
+  isOwnTransaction?(trxId: string): boolean;
 }
 
 export type DutyEvent = { status: "info" | "ok" | "warning" | "error"; msg: string; fields: Record<string, unknown> };
@@ -220,7 +223,11 @@ export class ValidatorDuties {
       } catch {
         params = {};
       }
-      const base = { action: tx.type, account: tx.player, in_block: block_num, trx_id: tx.id, block_num: params.block_num, chain_hash: params.hash, version: params.version, success: tx.success, error: tx.error };
+      // live: was it this process that signed it? (a follower such as Fire Horse filling in, or a
+      // second node still holding the key, shows up as "other")
+      const signer = this.broadcaster.isOwnTransaction ? (this.broadcaster.isOwnTransaction(tx.id) ? "self" : "other") : null;
+      const base = { action: tx.type, account: tx.player, in_block: block_num, trx_id: tx.id, block_num: params.block_num, chain_hash: params.hash, version: params.version, success: tx.success, error: tx.error, signer };
+      if (signer === "other") this.emit({ status: "warning", msg: "foreign signer", fields: base });
       if (tx.type === "validate_block") {
         const ours = params.block_num !== undefined ? this.svc.blocks.getBlockHash(params.block_num)?.l2_block_id : undefined;
         const intent = params.block_num !== undefined ? this.intents.get(params.block_num) : undefined;

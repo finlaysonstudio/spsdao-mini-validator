@@ -1,6 +1,7 @@
 /**
  * Observer mode: replay Hive blocks from a seed (or the newest checkpoint),
- * compute each L2 block hash, log it. Nothing is broadcast; no keys are needed.
+ * compute each L2 block hash, log it. With VALIDATOR_ACCOUNTS set it also performs
+ * validator duties, logged only (VALIDATOR_MODE=shadow) or signed and broadcast (live).
  *
  * With REFERENCE_API set, hashes are compared with an upstream archive node
  * every VERIFY_EVERY blocks; on a mismatch the first divergent block is found
@@ -22,7 +23,9 @@ import { listCheckpoints, loadCheckpoint, pruneCheckpoints, writeCheckpoint } fr
 import { StateStore } from "./state/index.mjs";
 import { error, log, logStatus, warn } from "./util/log.mjs";
 import { assertConsensusMathPow } from "./util/mathpow.mjs";
-import { ShadowBroadcaster, ValidatorDuties, type DutyEvent } from "./validator/duties.mjs";
+import { PrivateKey } from "./hive/signing.mjs";
+import { LiveBroadcaster, verifyPostingAuthority } from "./validator/broadcast.mjs";
+import { ShadowBroadcaster, ValidatorDuties, type Broadcaster, type DutyEvent } from "./validator/duties.mjs";
 
 /** Blocks per second over the most recent `size` processed blocks. */
 class RollingRate {
@@ -53,24 +56,46 @@ async function start(): Promise<{ state: StateStore; block_num: number; l2_block
   return { state, block_num: meta.block_num, l2_block_id: meta.l2_block_id, verified: true };
 }
 
-function makeDuties(svc: Services): ValidatorDuties | null {
-  if (config.validatorAccounts.length === 0) return null;
-  if (config.validatorMode !== "shadow") throw new Error(`VALIDATOR_MODE=${config.validatorMode} is not supported; only "shadow" exists`);
+/** Read the posting key for live mode and drop it from the environment. */
+function takeValidatorKey(): PrivateKey {
+  const wif = process.env.VALIDATOR_KEY ?? "";
+  delete process.env.VALIDATOR_KEY;
+  if (!wif) throw new Error("VALIDATOR_MODE=live needs VALIDATOR_KEY (posting key WIF)");
+  return PrivateKey.fromWif(wif);
+}
+
+async function makeDuties(svc: Services): Promise<ValidatorDuties | null> {
+  if (config.validatorAccounts.length === 0) {
+    delete process.env.VALIDATOR_KEY;
+    return null;
+  }
+  const mode = config.validatorMode;
+  if (mode !== "shadow" && mode !== "live") throw new Error(`VALIDATOR_MODE=${mode} is not supported; use "shadow" or "live"`);
   const emit = ({ status, msg, fields }: DutyEvent) => {
-    logStatus(status, msg, { mode: "shadow", ...fields });
-    if (config.dutyLog) appendFileSync(config.dutyLog, JSON.stringify({ ts: new Date().toISOString(), status, msg, mode: "shadow", ...fields }) + "\n");
+    logStatus(status, msg, { mode, ...fields });
+    if (config.dutyLog) appendFileSync(config.dutyLog, JSON.stringify({ ts: new Date().toISOString(), status, msg, mode, ...fields }) + "\n");
   };
+  let broadcaster: Broadcaster;
+  if (mode === "live") {
+    const key = takeValidatorKey();
+    const grants = await verifyPostingAuthority({ accounts: config.validatorAccounts, key });
+    log("posting authority verified", { public_key: key.publicKey, grants });
+    broadcaster = new LiveBroadcaster({ emit, key, customJsonId: config.customJsonId });
+  } else {
+    delete process.env.VALIDATOR_KEY;
+    broadcaster = new ShadowBroadcaster({ emit, customJsonId: config.customJsonId });
+  }
   const duties = new ValidatorDuties({
     svc,
     accounts: config.validatorAccounts,
-    broadcaster: new ShadowBroadcaster({ emit, customJsonId: config.customJsonId }),
+    broadcaster,
     emit,
     version: config.validatorVersion,
     validateBlockDelay: config.validateBlockDelay,
     enableCheckIns: config.enableCheckIns,
     checkInRetryBlocks: config.checkInRetryBlocks,
   });
-  log("validator duties enabled", { mode: "shadow", accounts: config.validatorAccounts, role: duties.role, validate_block_delay: config.validateBlockDelay, check_ins: config.enableCheckIns, version: config.validatorVersion });
+  log("validator duties enabled", { mode, accounts: config.validatorAccounts, role: duties.role, validate_block_delay: config.validateBlockDelay, check_ins: config.enableCheckIns, version: config.validatorVersion });
   return duties;
 }
 
@@ -89,7 +114,7 @@ async function main() {
   const svc = new Services(state, { custom_json_id: config.customJsonId, custom_json_prefix: config.customJsonPrefix });
   const processor = new BlockProcessor(svc);
   const ref = config.referenceApi ? new ReferenceApi(config.referenceApi) : null;
-  const duties = makeDuties(svc);
+  const duties = await makeDuties(svc);
 
   // Hashes since the last verified block, for bisecting a mismatch.
   let lastVerified = verified ? startBlock : 0;

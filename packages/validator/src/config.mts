@@ -46,8 +46,12 @@ export const config = {
     .split(",")
     .map((a) => a.trim())
     .filter(Boolean),
-  /** Only "shadow" exists: duties are computed and logged, nothing is signed or sent. */
-  validatorMode: env("VALIDATOR_MODE", "shadow"),
+  /**
+   * "shadow": duties are computed and logged, nothing is signed or sent.
+   * "live": duties are signed with VALIDATOR_KEY (posting WIF) and broadcast. The key is read
+   * once at startup (and removed from the environment); it is never part of this object.
+   */
+  validatorMode: env("VALIDATOR_MODE", "shadow") as "shadow" | "live",
   /** Fire Horse VALIDATE_BLOCK_DELAY: 0 = leader, > 0 = follower. */
   validateBlockDelay: envInt("VALIDATE_BLOCK_DELAY", 0),
   enableCheckIns: env("ENABLE_CHECK_INS", "true") === "true",
