@@ -164,8 +164,8 @@ account. Every `validate_block` and `check_in_validator` transaction is built ex
   and the node is within `price_feed.interval_blocks` of the head, send `price_feed` with the SPS price
   in USD every interval plus a random 0 to 1 interval. Price = HIVE/USD from the configured external
   feeds ÷ the Hive Engine `SWAP.HIVE:SPS` pool `basePrice`, to 7 decimals. The DAO feed needs no
-  key; CoinGecko and CoinMarketCap are used only when their API keys are set. Upstream behaviour is
-  kept: every feed is asked, in random order, and the last answer wins.
+  key; CoinGecko and CoinMarketCap are used only when their API keys are set. Feeds are tried in
+  random order and the first price wins.
 - **Observation**: every `validate_block` / `check_in_validator` on chain from a listed account
   (for example, sent by the upstream node that holds the key) is compared with this node's hash and
   with what it intended to send.

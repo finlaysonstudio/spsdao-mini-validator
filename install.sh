@@ -83,6 +83,7 @@ if [ ! -f .env ]; then
 # SPS Mini Validator configuration (see the README "Environment" table).
 SEED_FILE=${DIR}/data/${SEED_ASSET}
 CHECKPOINT_DIR=${DIR}/data/checkpoints
+CHECKPOINT_EVERY=1000
 CHUNK_CACHE_DIR=${DIR}/data/chunks
 HASH_LOG=${DIR}/data/hashes.log
 SNAPSHOT_DIR=${DIR}/data/snapshots

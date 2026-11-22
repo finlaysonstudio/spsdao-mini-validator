@@ -127,14 +127,24 @@ describe("PriceFeedDuty", () => {
 });
 
 describe("getTokenPriceInUSD", () => {
-  it("asks every feed and keeps the last answer (upstream behaviour)", async () => {
-    const r = await getTokenPriceInUSD({ token: "SPS", feeds: [feed("a", 0.03), feed("b", 0.04)], engine: engineWith("10"), random: () => 0.9, wait: noWait });
-    expect(r.metadata.external_feed).toBe("b");
-    expect(r.price).toBe(0.004);
+  it("uses the first feed that answers, in random order", async () => {
+    const asked: string[] = [];
+    const tracked = (name: string, price: number | null) => ({ name, getTokenPriceInUSD: async () => (asked.push(name), price) });
+    const r = await getTokenPriceInUSD({ token: "SPS", feeds: [tracked("a", 0.03), tracked("b", 0.04)], engine: engineWith("10"), random: () => 0.9, wait: noWait });
+    expect(r.metadata.external_feed).toBe("a");
+    expect(r.price).toBe(0.003);
+    expect(asked).toEqual(["a"]);
   });
 
-  it("fails when the last feed answers null, even after a good answer (upstream behaviour)", async () => {
-    await expect(getTokenPriceInUSD({ token: "SPS", feeds: [feed("a", 0.03), feed("b", null)], engine: engineWith("10"), random: () => 0.9, wait: noWait })).rejects.toThrow(/HIVE price/);
+  it("moves past a feed that answers null or fails", async () => {
+    const errors: string[] = [];
+    const r = await getTokenPriceInUSD({ token: "SPS", feeds: [feed("a", null), feed("b", new Error("HTTP 500")), feed("c", 0.04)], engine: engineWith("10"), random: () => 0.9, wait: noWait, onFeedError: (f) => void errors.push(f) });
+    expect(r.metadata.external_feed).toBe("c");
+    expect(errors).toEqual(["a", "b"]);
+  });
+
+  it("fails when no feed answers", async () => {
+    await expect(getTokenPriceInUSD({ token: "SPS", feeds: [feed("a", null), feed("b", new Error("down"))], engine: engineWith("10"), wait: noWait })).rejects.toThrow(/HIVE price/);
   });
 
   it("returns price 0 for a zero pool price", async () => {
@@ -201,7 +211,8 @@ describe("external feeds", () => {
         return new Response(JSON.stringify(body));
       }) as unknown as typeof fetch;
     expect(await new DaoExternalPriceFeed(settings.dao, reply({ price_usd: "0.034" })).getTokenPriceInUSD("HIVE")).toBe(0.034);
-    expect(await new CoinGeckoExternalPriceFeed({ ...settings.coinGecko, api_key: "cg" }, reply({ HIVE: { usd: 0.035 } })).getTokenPriceInUSD("HIVE")).toBe(0.035);
+    // real CoinGecko replies under the lowercase id
+    expect(await new CoinGeckoExternalPriceFeed({ ...settings.coinGecko, api_key: "cg" }, reply({ hive: { usd: 0.035 } })).getTokenPriceInUSD("HIVE")).toBe(0.035);
     expect(await new CoinGeckoExternalPriceFeed({ ...settings.coinGecko, api_key: "cg", demo: true }, reply({})).getTokenPriceInUSD("HIVE")).toBeNull();
     expect(await new CoinMarketCapExternalPriceFeed({ ...settings.coinMarketCap, api_key: "cmc" }, reply({ data: { "5370": { quote: { USD: { price: 0.036 } } } } })).getTokenPriceInUSD("HIVE")).toBe(0.036);
     expect(seen).toEqual([

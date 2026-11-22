@@ -83,7 +83,8 @@ export class CoinGeckoExternalPriceFeed implements ExternalPriceFeed {
     const response = await this.fetchFn(`${this.apiUrl}/api/v3/simple/price?ids=${encodeURIComponent(token)}&vs_currencies=USD`, { headers: { [this.header]: this.opts.api_key } });
     if (!response.ok) throw new Error(`Failed to fetch price for ${token} from coingecko external feed. Status: ${response.status}. Body: ${await response.text()}`);
     const json = (await response.json()) as Record<string, { usd?: string }>;
-    const price = json?.[token]?.usd;
+    // CoinGecko answers under the lowercase coin id
+    const price = (json?.[token] ?? json?.[token.toLowerCase()])?.usd;
     return price ? parseFloat(String(price)) : null;
   }
 }
@@ -166,10 +167,7 @@ export class HiveEngine {
 
 export type PriceResult = { price: number; metadata: { hive_usd: number; he_price: number; external_feed: string | null } };
 
-/**
- * Upstream getTokenPriceInUSD, behaviour kept: every feed is asked in random order and the
- * last answer wins (a feed answering null after a good answer makes the attempt fail).
- */
+/** Feeds are tried in random order; the first one that answers with a price is used. */
 export async function getTokenPriceInUSD({ token, feeds, engine, random = Math.random, wait = sleep, onFeedError }: { token: string; feeds: ExternalPriceFeed[]; engine: HiveEngine; random?: () => number; wait?: (ms: number) => Promise<unknown>; onFeedError?: (feed: string, err: unknown) => void }): Promise<PriceResult> {
   const randomized = [...feeds].sort(() => random() - 0.5);
   let externalHivePrice: number | null = null;
@@ -177,9 +175,13 @@ export async function getTokenPriceInUSD({ token, feeds, engine, random = Math.r
   for (const feed of randomized) {
     try {
       const maybe = await backOff(() => feed.getTokenPriceInUSD(HIVE_TOKEN), { wait });
-      if (maybe === undefined) continue;
+      if (maybe === null || maybe === undefined || !Number.isFinite(maybe)) {
+        onFeedError?.(feed.name, new Error(`no ${HIVE_TOKEN} price in the response`));
+        continue;
+      }
       externalHivePrice = maybe;
       feedUsed = feed.name;
+      break;
     } catch (err) {
       onFeedError?.(feed.name, err);
     }
