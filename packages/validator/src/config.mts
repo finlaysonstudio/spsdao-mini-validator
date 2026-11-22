@@ -41,7 +41,7 @@ export const config = {
   referenceApi: env("REFERENCE_API", ""),
   /** Verify against the reference every this many blocks (and always before a checkpoint). */
   verifyEvery: envInt("VERIFY_EVERY", 10000),
-  /** Validator accounts to validate and check in for (comma-separated; VALIDATOR_ACCOUNT also accepted). Empty = observer only. */
+  /** Validator accounts to validate and check in for (comma-separated; VALIDATOR_ACCOUNT also accepted). Empty = no duties (hashes only). */
   validatorAccounts: env("VALIDATOR_ACCOUNTS", env("VALIDATOR_ACCOUNT", ""))
     .split(",")
     .map((a) => a.trim())

@@ -8,7 +8,7 @@ Status:
 - [x] Port repositories, actions, virtual sources, processor
 - [x] Consistent seed extraction from a live upstream DB
 - [x] DB-diff backtest harness; first blocks after the seed match exactly
-- [x] Observer container (no DB, no keys)
-- [ ] Multi-day soak: observer hash log vs upstream DB (`LOCAL/check-hashes.sh`)
+- [x] Validator container (no DB; keys only in live mode)
+- [ ] Multi-day soak: validator hash log vs upstream DB (`LOCAL/check-hashes.sh`)
 - [ ] Port remaining rare paths if they ever appear (see README "Known gaps")
 - [ ] Reduce memory further (compact promise params, drop balance rows that are zero)

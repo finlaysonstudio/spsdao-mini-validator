@@ -1,4 +1,4 @@
-# Minimal SPS validator observer: computes L2 block hashes in memory, no database, no web UI.
+# Minimal SPS validator: computes L2 block hashes in memory and performs validator duties; no database, no web UI.
 #
 # Node 24 must run with --no-use-std-math-pow: V8's default std::pow is 1 ulp off upstream's
 # node:23.3 (0.99 ** 32 is ...534 instead of ...535), and upstream feeds such floats into hashed

@@ -1,7 +1,7 @@
 services:
-  observer:
+  validator:
     build: .
-    container_name: spsdao-mini-observer
+    container_name: spsdao-mini-validator
     restart: unless-stopped
     environment:
       SEED_FILE: /data/seed.ndjson.gz
@@ -26,7 +26,7 @@ services:
       - path: ./LOCAL/validator.env
         required: false
     volumes:
-      - ./LOCAL/observer:/data
+      - ./LOCAL/validator:/data
     mem_limit: 4g
     logging:
       driver: json-file
@@ -34,7 +34,7 @@ services:
         max-size: "50m"
         max-file: "5"
 
-  # Compares the observer's hash log with the upstream validator's database once a minute.
+  # Compares the validator's hash log with the upstream validator's database once a minute.
   # Needs LOCAL/checker.env (PGUSER/PGPASSWORD): run scripts/make-checker-env.sh first.
   checker:
     build: .
@@ -52,12 +52,12 @@ services:
     env_file:
       - LOCAL/checker.env
     volumes:
-      - ./LOCAL/observer:/data:ro
+      - ./LOCAL/validator:/data:ro
     networks:
       - default
       - upstream_pg
     depends_on:
-      - observer
+      - validator
     mem_limit: 256m
     logging:
       driver: json-file

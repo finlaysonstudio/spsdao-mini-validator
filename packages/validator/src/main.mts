@@ -1,5 +1,5 @@
 /**
- * Observer mode: replay Hive blocks from a seed (or the newest checkpoint),
+ * Validator: replay Hive blocks from a seed (or the newest checkpoint),
  * compute each L2 block hash, log it. With VALIDATOR_ACCOUNTS set it also performs
  * validator duties, logged only (VALIDATOR_MODE=shadow) or signed and broadcast (live).
  *
@@ -106,7 +106,7 @@ async function makeDuties(svc: Services): Promise<Duties | null> {
 
 async function main() {
   assertConsensusMathPow();
-  log("observer starting", {
+  log("validator starting", {
     node: process.version,
     seed_file: config.seedFile,
     checkpoint_dir: config.checkpointDir || null,
@@ -213,7 +213,7 @@ async function main() {
       log("snapshot exported", { block_num: blockNum, file: manifest.file, bytes: manifest.bytes, sha256: manifest.sha256, verified: ok === true, seconds: (Date.now() - t0) / 1000 });
     }
   }
-  log("observer stopped", { last_block: lastBlock });
+  log("validator stopped", { last_block: lastBlock });
 }
 
 main().catch((err) => {

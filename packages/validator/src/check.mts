@@ -1,10 +1,10 @@
 /**
  * Hash checker: every CHECK_INTERVAL_SECONDS, compare the newest CHECK_WINDOW
- * lines of the observer's hash log (`block_num l2_block_id`) with the upstream
+ * lines of the validator's hash log (`block_num l2_block_id`) with the upstream
  * validator's `blocks` table and emit one JSON status line:
- *   status=ok       every compared hash matches and the observer is within CHECK_MAX_LAG blocks of the DB head
- *   status=error    a hash differs (reason=mismatch) or the observer is lagging (reason=lagging)
- *   status=warning  the observer is behind but replaying faster than the chain (reason=catching_up, e.g. after a
+ *   status=ok       every compared hash matches and the validator is within CHECK_MAX_LAG blocks of the DB head
+ *   status=error    a hash differs (reason=mismatch) or the validator is lagging (reason=lagging)
+ *   status=warning  the validator is behind but replaying faster than the chain (reason=catching_up, e.g. after a
  *                   restart), or nothing could be compared (empty log, no overlap, or the DB is unreachable)
  * Connection comes from the usual PG* environment variables.
  */
@@ -25,8 +25,8 @@ const maxLag = envInt("CHECK_MAX_LAG", 100);
 const LINE_BYTES = 80; // "block_num sha256\n" is 75 bytes
 const CHAIN_BLOCKS_PER_SECOND = 1 / 3;
 
-/** Observer head seen by the previous check, to tell a replay in progress from a stalled observer. */
-let previousObserverHead: number | undefined;
+/** Validator head seen by the previous check, to tell a replay in progress from a stalled validator. */
+let previousValidatorHead: number | undefined;
 let previousCheckAt: number | undefined;
 
 type Entry = { block_num: number; l2_block_id: string };
@@ -64,10 +64,10 @@ async function check(): Promise<void> {
     logStatus("warning", "hash log empty", { reason: "no_log", hash_log: hashLog });
     return;
   }
-  // Deduplicate by block (a restarted observer may re-log blocks); the newest line wins.
+  // Deduplicate by block (a restarted validator may re-log blocks); the newest line wins.
   const ours = new Map<number, string>();
   for (const e of entries) ours.set(e.block_num, e.l2_block_id);
-  const observerHead = Math.max(...ours.keys());
+  const validatorHead = Math.max(...ours.keys());
 
   const client = new pg.Client();
   let rows: Entry[];
@@ -93,29 +93,29 @@ async function check(): Promise<void> {
     else mismatches.push({ block_num: row.block_num, ours: mine, theirs: row.l2_block_id });
   }
   mismatches.sort((a, b) => a.block_num - b.block_num);
-  const lag = dbHead - observerHead;
+  const lag = dbHead - validatorHead;
   // Catching up = behind, but advancing faster than the chain itself (first check after a start counts too).
   const now = Date.now();
-  // A head that moved backwards means the observer restarted and is re-logging from its seed.
-  const restarted = previousObserverHead === undefined || observerHead < previousObserverHead;
-  const advanced = restarted ? Infinity : (observerHead - previousObserverHead!) / ((now - previousCheckAt!) / 1000);
+  // A head that moved backwards means the validator restarted and is re-logging from its seed.
+  const restarted = previousValidatorHead === undefined || validatorHead < previousValidatorHead;
+  const advanced = restarted ? Infinity : (validatorHead - previousValidatorHead!) / ((now - previousCheckAt!) / 1000);
   const catchingUp = lag > maxLag && advanced > 2 * CHAIN_BLOCKS_PER_SECOND;
-  previousObserverHead = observerHead;
+  previousValidatorHead = validatorHead;
   previousCheckAt = now;
   const fields = {
     compared: rows.length,
     matching,
     mismatching: mismatches.length,
     first_mismatch: mismatches[0] ?? null,
-    observer_head: observerHead,
+    validator_head: validatorHead,
     db_head: dbHead,
     lag,
     window_blocks: ours.size,
   };
   if (mismatches.length > 0) logStatus("error", "hash mismatch", { reason: "mismatch", ...fields });
   else if (rows.length === 0) logStatus("warning", "no overlap with blocks table", { reason: "no_overlap", ...fields });
-  else if (catchingUp) logStatus("warning", "observer catching up", { reason: "catching_up", max_lag: maxLag, ...fields });
-  else if (lag > maxLag) logStatus("error", "observer lagging", { reason: "lagging", max_lag: maxLag, ...fields });
+  else if (catchingUp) logStatus("warning", "validator catching up", { reason: "catching_up", max_lag: maxLag, ...fields });
+  else if (lag > maxLag) logStatus("error", "validator lagging", { reason: "lagging", max_lag: maxLag, ...fields });
   else logStatus("ok", "hashes match", { reason: "ok", ...fields });
 }
 

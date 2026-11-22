@@ -1,4 +1,4 @@
-# SPS Mini Validator (observer)
+# SPS Mini Validator
 
 A minimal, in-memory port of the [TheSPSDAO/SPS-Validator](https://github.com/TheSPSDAO/SPS-Validator)
 block-processing core. It replays Hive blocks, applies every SPS layer-2 action and virtual
@@ -81,12 +81,12 @@ gzip -k LOCAL/seed.ndjson
 SEED_FILE=LOCAL/seed.ndjson.gz HASH_LOG=LOCAL/hashes.log npm run dev --workspace packages/validator
 ```
 
-Container (observer only, no keys):
+Container (shadow mode by default; keys only in live mode):
 
 ```sh
-mkdir -p LOCAL/observer && cp LOCAL/seed.ndjson.gz LOCAL/observer/
+mkdir -p LOCAL/validator && cp LOCAL/seed.ndjson.gz LOCAL/validator/
 docker compose up -d --build
-docker compose logs -f observer
+docker compose logs -f validator
 ```
 
 ### Backtesting against a running upstream node
@@ -138,7 +138,7 @@ instead of an upstream database or the genesis replay.
 
 ## Validator duties
 
-With `VALIDATOR_ACCOUNTS` set, the observer also performs the validator's duties for each listed
+With `VALIDATOR_ACCOUNTS` set, the validator also performs the validator's duties for each listed
 account. Every `validate_block` and `check_in_validator` transaction is built exactly as upstream's
 `HiveClient` broadcasts it (one `custom_json`, `id: sm_sps`, posting authority).
 
@@ -207,7 +207,7 @@ Duty log lines (`mode: "shadow"` or `"live"`):
 
 Both containers write one JSON object per line (JSONL), suitable for shipping to Datadog as is. `status` is the log level (`info`, `warning`, `error`, or `ok` for a passing health check).
 
-Observer block line, emitted for every block once within 50 blocks of the head (every 100th block while catching up):
+Validator block line, emitted for every block once within 50 blocks of the head (every 100th block while catching up):
 
 ```json
 {"ts":"2026-11-01T14:07:03.323Z","status":"info","msg":"block","block_num":111284491,"l2_block_id":"ea32…64ac","txs":2,"validator":"bamlolx","reward":0.364581,"reward_token":"SPS","head_block":111284491,"behind":0,"rate":0.33,"rss_mb":875}
@@ -220,22 +220,22 @@ Observer block line, emitted for every block once within 50 blocks of the head (
 | `txs` | number of L2 transactions in the block (matching `custom_json` ops plus virtual ops such as expirations) |
 | `validator` | the validator that upstream's seeded RNG selects to validate this block (`null` when none is selected) |
 | `reward`, `reward_token` | amount and token paid to that validator if it validates the block |
-| `head_block` | the newest block the observer is allowed to process (last irreversible block minus `BLOCKS_BEHIND_HEAD`) |
+| `head_block` | the newest block the validator is allowed to process (last irreversible block minus `BLOCKS_BEHIND_HEAD`) |
 | `behind` | `head_block - block_num`; 0 means caught up |
 | `rate` | blocks processed per second over the last 200 blocks (about 0.33 at the head, since Hive produces one block every 3 s) |
-| `rss_mb` | resident memory of the observer process |
+| `rss_mb` | resident memory of the validator process |
 
 The `checker` service compares the newest `CHECK_WINDOW` lines of `hashes.log` with the upstream `blocks` table every `CHECK_INTERVAL_SECONDS` and emits one line:
 
 ```json
-{"ts":"…","status":"ok","msg":"hashes match","reason":"ok","compared":5000,"matching":5000,"mismatching":0,"first_mismatch":null,"observer_head":111284491,"db_head":111284491,"lag":0,"window_blocks":5000}
+{"ts":"…","status":"ok","msg":"hashes match","reason":"ok","compared":5000,"matching":5000,"mismatching":0,"first_mismatch":null,"validator_head":111284491,"db_head":111284491,"lag":0,"window_blocks":5000}
 ```
 
 | status | reason | meaning |
 |---|---|---|
-| `ok` | `ok` | every compared hash matches and the observer is within `CHECK_MAX_LAG` blocks of the DB head |
+| `ok` | `ok` | every compared hash matches and the validator is within `CHECK_MAX_LAG` blocks of the DB head |
 | `error` | `mismatch` | at least one hash differs; `first_mismatch` has the block and both hashes |
-| `error` | `lagging` | no mismatch, but the observer is more than `CHECK_MAX_LAG` blocks behind the database and not gaining on it |
+| `error` | `lagging` | no mismatch, but the validator is more than `CHECK_MAX_LAG` blocks behind the database and not gaining on it |
 | `warning` | `catching_up` | more than `CHECK_MAX_LAG` behind but replaying faster than the chain (normal for a few minutes after a restart) |
 | `warning` | `no_log`, `no_overlap`, `db_error` | nothing could be compared (empty log, blocks not in the DB yet, or Postgres unreachable) |
 

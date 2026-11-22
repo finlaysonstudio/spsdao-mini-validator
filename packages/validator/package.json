@@ -2,7 +2,7 @@
   "name": "@spsdao/validator",
   "version": "0.1.0",
   "private": true,
-  "description": "Minimal SPS validator observer: replays Hive blocks in memory and computes L2 block hashes",
+  "description": "Minimal SPS validator: replays Hive blocks in memory, computes L2 block hashes and performs validator duties",
   "type": "module",
   "exports": {
     ".": "./src/lib.mts",

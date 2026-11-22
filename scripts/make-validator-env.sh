@@ -1,7 +1,7 @@
 #!/bin/sh
 # Write LOCAL/validator.env with the validator posting key, read from a running node's
 # container environment (default: the upstream validator). Nothing is printed.
-# The observer stays in shadow mode until VALIDATOR_MODE=live is added to that file.
+# The validator stays in shadow mode until VALIDATOR_MODE=live is added to that file.
 #
 #   scripts/make-validator-env.sh [container] [out]
 set -eu

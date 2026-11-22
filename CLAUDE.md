@@ -14,7 +14,7 @@ Postgres is the ground truth for backtests. See README.md for usage.
 
 | Task | Command |
 |------|---------|
-| Run observer | `npm run dev --workspace packages/validator` |
+| Run validator | `npm run dev --workspace packages/validator` |
 | Typecheck | `npm run typecheck` |
 | Extract seed | `npm run extract-seed --workspace packages/validator -- out.ndjson` (PG* env vars) |
 | Backtest | `npm run dbdiff --workspace packages/validator` (PG*, SEED_FILE, BLOCK_CACHE_DIR, FOLLOW=1) |
