@@ -29,8 +29,4 @@ export {
   type CheckpointMeta,
 } from "./state/checkpoint.mjs";
 export { StateStore } from "./state/index.mjs";
-export {
-  assertConsensusMathPow,
-  findMathPowMismatches,
-  MATH_POW_FLAG,
-} from "./util/mathpow.mjs";
+export { deterministicPow } from "./util/pow.mjs";

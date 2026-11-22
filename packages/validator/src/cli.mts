@@ -1,7 +1,6 @@
-#!/usr/bin/env -S node --no-use-std-math-pow
+#!/usr/bin/env node
 /**
  * sps-mini: command-line entry for bare-metal installs (the Docker image runs main.mjs directly).
- * The shebang passes --no-use-std-math-pow, which Node rejects in NODE_OPTIONS (src/util/mathpow.mts).
  *
  *   sps-mini run                                   follow the chain (configured by environment, see README)
  *   sps-mini export <checkpoint-dir> <out> [block] [--verify]
@@ -9,7 +8,6 @@
  *   sps-mini version
  */
 import { readFileSync } from "node:fs";
-import { assertConsensusMathPow } from "./util/mathpow.mjs";
 import { error } from "./util/log.mjs";
 
 const USAGE = `usage: sps-mini <run | export | verify | version> [args]
@@ -30,11 +28,9 @@ async function cli(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
   switch (command) {
     case "run":
-      assertConsensusMathPow();
       await import("./main.mjs");
       return -1; // main keeps running and exits on its own
     case "export":
-      assertConsensusMathPow();
       return (await import("./commands/export.mjs")).exportCommand(rest);
     case "verify":
       return (await import("./commands/verify.mjs")).verifyCommand(rest);

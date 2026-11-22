@@ -10,6 +10,11 @@ validator duties in shadow mode (log only) or live (signs and broadcasts; `src/v
 The upstream source is checked out at `~/Code/SPS-Validator`; a running upstream node's
 Postgres is the ground truth for backtests. See README.md for usage.
 
+## Versioning
+
+The root `package.json` and `packages/validator/package.json` carry the same version. Bump both
+together, and tag the release `v<version>`. 0.1.0 is the only published release.
+
 ## Commands
 
 | Task | Command |

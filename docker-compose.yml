@@ -67,7 +67,7 @@ services:
 
   # Replay from upstream's initial snapshot (var/genesis). Separate profile: never started by a
   # plain `docker compose up`. Run: docker compose --profile genesis up -d --build genesis
-  # Diagnose: docker compose --profile genesis run --rm genesis node --no-use-std-math-pow --import tsx tools/diff-block.mts <block>
+  # Diagnose: docker compose --profile genesis run --rm genesis node --import tsx tools/diff-block.mts <block>
   genesis:
     profiles: ["genesis"]
     build:
@@ -76,7 +76,7 @@ services:
     image: spsdao-mini-validator:dev
     container_name: spsdao-mini-genesis
     working_dir: /app/packages/validator
-    command: ["node", "--no-use-std-math-pow", "--max-old-space-size=4096", "dist/main.mjs"]
+    command: ["node", "--max-old-space-size=4096", "dist/main.mjs"]
     restart: "no"
     environment:
       SEED_FILE: /genesis/seed-93703455.ndjson.gz
