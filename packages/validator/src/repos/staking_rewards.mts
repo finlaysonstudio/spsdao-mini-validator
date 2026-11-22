@@ -2,6 +2,7 @@ import type { StateStore } from "../state/index.mjs";
 import { EventLog } from "../types.mjs";
 import { warn } from "../util/log.mjs";
 import { formatScaled, numberToScaled, scaledToNumber } from "../util/num.mjs";
+import { deterministicPow } from "../util/pow.mjs";
 import type { BalanceRepository } from "./balance.mjs";
 import type { BlockRepository } from "./blocks.mjs";
 import type { ConfigLoader, PoolSettings } from "./config.mjs";
@@ -155,7 +156,7 @@ export class StakingRewardsRepository {
     if (!params.reduction_pct || !params.reduction_blocks) return 1;
     const total_reductions = Math.trunc((block_num - params.start_block) / params.reduction_blocks);
     const reduction_pct = 1 - params.reduction_pct / 100;
-    return reduction_pct ** total_reductions;
+    return deterministicPow(reduction_pct, total_reductions);
   }
 
   getTotalRewardDebt(pool_name: string): number {

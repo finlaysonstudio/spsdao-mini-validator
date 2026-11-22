@@ -65,11 +65,9 @@ math in JavaScript is reproduced as float math here.
 
 ## Running
 
-Requires Node 24+ started with `--no-use-std-math-pow` (the package scripts and the Docker image
-pass it). Since Node 24, V8's default `Math.pow` is 1 ulp off upstream's Node 23.3 on inputs such as
-`0.99 ** 32`, which forks the staking reward hash; the flag restores V8's internal pow. It is a V8
-flag and is rejected in `NODE_OPTIONS`. Block processing refuses to start when the runtime fails
-the check (`src/util/mathpow.mts`).
+Requires Node 24+. Consensus exponentiation uses `deterministicPow` (`src/util/pow.mts`), a port of
+V8's fdlibm pow that returns the same result on every Node version and CPU, so no runtime flags are
+needed.
 
 ```sh
 npm install

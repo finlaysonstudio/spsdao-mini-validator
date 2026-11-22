@@ -20,7 +20,7 @@ done
 [ -n "$SEED" ] || { echo "usage: $0 <seed.ndjson.gz> [--genesis] [--tag vX.Y.Z]" >&2; exit 2; }
 [ -n "$TAG" ] || TAG=$(gh release list --limit 1 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[0].tagName')
 
-node --no-use-std-math-pow packages/validator/dist/cli.mjs verify "$SEED"
+node packages/validator/dist/cli.mjs verify "$SEED"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT

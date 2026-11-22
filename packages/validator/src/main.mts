@@ -22,7 +22,6 @@ import { Services } from "./services.mjs";
 import { listCheckpoints, loadCheckpoint, pruneCheckpoints, writeCheckpoint } from "./state/checkpoint.mjs";
 import { StateStore } from "./state/index.mjs";
 import { error, log, logStatus, warn } from "./util/log.mjs";
-import { assertConsensusMathPow } from "./util/mathpow.mjs";
 import { LiveBroadcaster, parseKeys, resolveSigners } from "./validator/broadcast.mjs";
 import { configuredFeeds, HiveEngine, PriceFeedDuty } from "./validator/price_feed.mjs";
 import { ShadowBroadcaster, ValidatorDuties, type Broadcaster, type DutyEvent } from "./validator/duties.mjs";
@@ -105,7 +104,6 @@ async function makeDuties(svc: Services): Promise<Duties | null> {
 }
 
 async function main() {
-  assertConsensusMathPow();
   log("validator starting", {
     node: process.version,
     seed_file: config.seedFile,
