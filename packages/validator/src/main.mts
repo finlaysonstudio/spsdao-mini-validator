@@ -23,8 +23,8 @@ import { listCheckpoints, loadCheckpoint, pruneCheckpoints, writeCheckpoint } fr
 import { StateStore } from "./state/index.mjs";
 import { error, log, logStatus, warn } from "./util/log.mjs";
 import { assertConsensusMathPow } from "./util/mathpow.mjs";
-import { PrivateKey } from "./hive/signing.mjs";
-import { LiveBroadcaster, verifyPostingAuthority } from "./validator/broadcast.mjs";
+import { LiveBroadcaster, parseKeys, resolveSigners } from "./validator/broadcast.mjs";
+import { configuredFeeds, HiveEngine, PriceFeedDuty } from "./validator/price_feed.mjs";
 import { ShadowBroadcaster, ValidatorDuties, type Broadcaster, type DutyEvent } from "./validator/duties.mjs";
 
 /** Blocks per second over the most recent `size` processed blocks. */
@@ -56,15 +56,16 @@ async function start(): Promise<{ state: StateStore; block_num: number; l2_block
   return { state, block_num: meta.block_num, l2_block_id: meta.l2_block_id, verified: true };
 }
 
-/** Read the posting key for live mode and drop it from the environment. */
-function takeValidatorKey(): PrivateKey {
-  const wif = process.env.VALIDATOR_KEY ?? "";
+/** Read the posting keys for live mode and drop them from the environment. */
+function takeValidatorKeys(): ReturnType<typeof parseKeys> {
+  const value = process.env.VALIDATOR_KEY ?? "";
   delete process.env.VALIDATOR_KEY;
-  if (!wif) throw new Error("VALIDATOR_MODE=live needs VALIDATOR_KEY (posting key WIF)");
-  return PrivateKey.fromWif(wif);
+  return parseKeys(value);
 }
 
-async function makeDuties(svc: Services): Promise<ValidatorDuties | null> {
+type Duties = { duties: ValidatorDuties; priceFeed: PriceFeedDuty | null; mode: "shadow" | "live" };
+
+async function makeDuties(svc: Services): Promise<Duties | null> {
   if (config.validatorAccounts.length === 0) {
     delete process.env.VALIDATOR_KEY;
     return null;
@@ -75,15 +76,17 @@ async function makeDuties(svc: Services): Promise<ValidatorDuties | null> {
     logStatus(status, msg, { mode, ...fields });
     if (config.dutyLog) appendFileSync(config.dutyLog, JSON.stringify({ ts: new Date().toISOString(), status, msg, mode, ...fields }) + "\n");
   };
-  let broadcaster: Broadcaster;
+  const shadow = new ShadowBroadcaster({ emit, customJsonId: config.customJsonId });
+  let broadcaster: Broadcaster = shadow;
   if (mode === "live") {
-    const key = takeValidatorKey();
-    const grants = await verifyPostingAuthority({ accounts: config.validatorAccounts, key });
-    log("posting authority verified", { public_key: key.publicKey, grants });
-    broadcaster = new LiveBroadcaster({ emit, key, customJsonId: config.customJsonId });
+    const { keys, invalid } = takeValidatorKeys();
+    for (const k of invalid) emit({ status: "error", msg: "validator key skipped", fields: { key_index: k.index, reason: k.reason } });
+    const { signers, skipped } = await resolveSigners({ accounts: config.validatorAccounts, keys });
+    for (const s of signers) emit({ status: "info", msg: "posting authority verified", fields: { account: s.account, public_key: s.key.publicKey, via: s.via, grantee: s.grantee ?? null } });
+    for (const s of skipped) emit({ status: "error", msg: "validator account skipped", fields: { account: s.account, reason: s.reason, fallback: "shadow" } });
+    broadcaster = new LiveBroadcaster({ emit, signers, fallback: shadow, customJsonId: config.customJsonId });
   } else {
     delete process.env.VALIDATOR_KEY;
-    broadcaster = new ShadowBroadcaster({ emit, customJsonId: config.customJsonId });
   }
   const duties = new ValidatorDuties({
     svc,
@@ -95,8 +98,10 @@ async function makeDuties(svc: Services): Promise<ValidatorDuties | null> {
     enableCheckIns: config.enableCheckIns,
     checkInRetryBlocks: config.checkInRetryBlocks,
   });
-  log("validator duties enabled", { mode, accounts: config.validatorAccounts, role: duties.role, validate_block_delay: config.validateBlockDelay, check_ins: config.enableCheckIns, version: config.validatorVersion });
-  return duties;
+  const feeds = config.enablePriceFeed ? configuredFeeds(config.priceFeed) : [];
+  const priceFeed = feeds.length > 0 ? new PriceFeedDuty({ svc, accounts: config.validatorAccounts, broadcaster, emit, feeds, engine: new HiveEngine(config.hiveEngineRpcNodes) }) : null;
+  log("validator duties enabled", { mode, accounts: config.validatorAccounts, role: duties.role, validate_block_delay: config.validateBlockDelay, check_ins: config.enableCheckIns, price_feeds: feeds.map((f) => f.name), version: config.validatorVersion });
+  return { duties, priceFeed, mode };
 }
 
 async function main() {
@@ -186,7 +191,8 @@ async function main() {
       });
     }
     if (config.hashLog) appendFileSync(config.hashLog, `${blockNum} ${result.l2_block_id}\n`);
-    duties?.onBlock({ block_num: blockNum, l2_block_id: result.l2_block_id, validator: result.validator, transactions: result.transactions, head_block: headBlock });
+    duties?.duties.onBlock({ block_num: blockNum, l2_block_id: result.l2_block_id, validator: result.validator, transactions: result.transactions, head_block: headBlock });
+    duties?.priceFeed?.onBlock({ block_num: blockNum, head_block: headBlock });
 
     const atCheckpoint = config.checkpointDir !== "" && blockNum % config.checkpointEvery === 0;
     const atSnapshot = config.snapshotDir !== "" && blockNum % config.snapshotEvery === 0;

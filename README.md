@@ -143,13 +143,13 @@ account. Every `validate_block` and `check_in_validator` transaction is built ex
 `HiveClient` broadcasts it (one `custom_json`, `id: sm_sps`, posting authority).
 
 - **Shadow mode** (default): transactions are logged; nothing is signed or sent and no key is read.
-- **Live mode** (`VALIDATOR_MODE=live`): transactions are signed with `VALIDATOR_KEY` (posting key
-  WIF) and broadcast, referencing the head block and expiring 60 s after it. Signatures are
-  byte-identical to dhive's (`src/hive/signing.spec.mts`). At startup the key must satisfy every
-  listed account's posting authority on its own, directly or through an `account_auths` grant;
-  otherwise the process exits. The key is removed from the environment once read and never logged.
-
-Price feeds (upstream `PriceFeedPlugin`, top validators only) are not implemented.
+- **Live mode** (`VALIDATOR_MODE=live`): transactions are signed and broadcast, referencing the
+  head block and expiring 60 s after it. Signatures are byte-identical to dhive's
+  (`src/hive/signing.spec.mts`). `VALIDATOR_KEY` holds one or more posting key WIFs, comma-separated;
+  at startup each account is matched with a key that alone satisfies its posting authority
+  (directly, or through an `account_auths` grant). An account no key can sign for, or a malformed
+  key, is reported and skipped: its duties stay in shadow mode and the process keeps running.
+  Keys are removed from `process.env` once read and never logged.
 
 - **Block validation** (upstream `processor.ts`): when the seeded PRNG picks a listed account for a
   block within `max_block_age` of the head, send `{block_num, hash, version}`.
@@ -159,6 +159,13 @@ Price feeds (upstream `PriceFeedPlugin`, top validators only) are not implemente
   at `last_check_in + check_in_interval_blocks + jitter` (`jitter = sha256("account:last")` modulo
   half the window, so every node agrees), plus the follower delay. An unconfirmed check-in is re-sent
   after `CHECK_IN_RETRY_BLOCKS`. Accounts that share a reward account check in once.
+- **Price feed** (upstream `PriceFeedPlugin`, `src/validator/price_feed.mts`): while a listed account
+  is among the top `num_top_validators` (active, by votes), rewards have started and are not paused,
+  and the node is within `price_feed.interval_blocks` of the head, send `price_feed` with the SPS price
+  in USD every interval plus a random 0 to 1 interval. Price = HIVE/USD from the configured external
+  feeds ÷ the Hive Engine `SWAP.HIVE:SPS` pool `basePrice`, to 7 decimals. The DAO feed needs no
+  key; CoinGecko and CoinMarketCap are used only when their API keys are set. Upstream behaviour is
+  kept: every feed is asked, in random order, and the last answer wins.
 - **Observation**: every `validate_block` / `check_in_validator` on chain from a listed account
   (for example, sent by the upstream node that holds the key) is compared with this node's hash and
   with what it intended to send.
@@ -167,26 +174,34 @@ Price feeds (upstream `PriceFeedPlugin`, top validators only) are not implemente
 |----------|---------|---------|
 | `VALIDATOR_ACCOUNTS` | (none) | Comma-separated validator accounts (`VALIDATOR_ACCOUNT` also accepted); empty disables duties |
 | `VALIDATOR_MODE` | `shadow` | `shadow` (log only) or `live` (sign and broadcast) |
-| `VALIDATOR_KEY` | (none) | Live mode: posting key WIF for the listed accounts. In the container, `LOCAL/validator.env` (`scripts/make-validator-env.sh`) |
+| `VALIDATOR_KEY` | (none) | Live mode: posting key WIFs, comma-separated. In the container, `LOCAL/validator.env` (`scripts/make-validator-env.sh`) |
 | `VALIDATE_BLOCK_DELAY` | 0 | 0 = leader; `N` = follower that waits `N` blocks |
 | `ENABLE_CHECK_INS` | `true` | Check in for the listed accounts |
 | `CHECK_IN_RETRY_BLOCKS` | 100 | Re-send an unconfirmed check-in after this many blocks |
 | `VALIDATOR_VERSION` | `1.5.1-mini.0` | `version` param (recorded on chain as the validator's `last_version`) |
+| `ENABLE_PRICE_FEED` | `true` | Price feed duty (runs only for top validators) |
+| `PRICE_FEED_DAO_API_URL` | `https://prices.splinterlands.workers.dev` | DAO HIVE/USD feed (no key) |
+| `PRICE_FEED_COIN_GECKO_API_KEY` | (none) | Enables the CoinGecko feed (`PRICE_FEED_COIN_GECKO_API_URL`, `_DEMO_API_URL`, `_DEMO` as upstream) |
+| `PRICE_FEED_COIN_MARKET_CAP_API_KEY` | (none) | Enables the CoinMarketCap feed (`PRICE_FEED_COIN_MARKET_CAP_API_URL`, `_TOKEN_MAP` as upstream) |
+| `HIVE_ENGINE_RPC_NODES` | upstream's eight nodes | Hive Engine nodes, in failover order |
 | `DUTY_LOG` | (none) | Also append duty events (JSONL) to this file |
 
 Duty log lines (`mode: "shadow"` or `"live"`):
 
 | msg | status | meaning |
 |---|---|---|
-| `shadow broadcast` | info | a transaction this node would send; `custom_json` is the exact operation |
+| `shadow broadcast` | info | a transaction this node would send; `custom_json` is the exact operation (`reason: no_key` in live mode for a skipped account) |
 | `duty deferred` / `duty skipped` | info / warning | follower hold, leader already validated, paused, or too old after the delay |
 | `observed validation` | ok / error | on-chain `validate_block` by a listed account; `match` = its hash equals ours, `intent_match` = equals what we would have sent |
 | `observed check-in` | ok / error | on-chain check-in; `match` = its hash equals ours for that block; `blocks_from_intent` = how far it landed from our intended block |
 | `validation missed` | error | a block we would have validated passed `max_block_age` with no validation on chain |
-| `posting authority verified` | info | live startup: the key's public key and how it holds each account's posting authority |
+| `posting authority verified` | info | live startup, per account: the signing public key and `via` (`key` or `account_auth` + `grantee`) |
+| `validator account skipped` | error | live startup: no configured key can sign for the account; it stays in shadow (`reason`) |
+| `validator key skipped` | error | live startup: a malformed key (`key_index`, never the value) |
+| `price feed source failed` | warning | one external feed failed (others may still answer) |
+| `price feed failed` | error | no price this time; retried on the next block |
 | `broadcast sent` | info | live: the node accepted the transaction; `trx_id`, `expiration`, `ms`, `duplicate` when a retry found it already accepted |
 | `broadcast failed` | error | live: `stage` `prepare` (no head block) or `send` (rejected or unreachable); `error` |
-| `foreign signer` | warning | live: a validation or check-in for a listed account on chain that this process did not sign (a follower filling in, or another node still holding the key); `signer` is also on `observed …` lines |
 
 ## Logs and health check
 

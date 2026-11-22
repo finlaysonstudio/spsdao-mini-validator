@@ -138,6 +138,12 @@ export class ValidatorRepository {
     return rows.map(rawRow);
   }
 
+  /** Upstream isTopValidator: active, total_votes > 0, ORDER BY total_votes DESC, account_name, LIMIT n. */
+  isTopValidator(account: string, num_top_validators: number): boolean {
+    const rows = orderValidators(this.state.validators.all().filter((r) => r.is_active && r.total_votes > 0n)).slice(0, num_top_validators);
+    return rows.some((r) => r.account_name === account);
+  }
+
   lookup(account: string, block_num: number): ValidatorEntry | null {
     const row = this.state.validators.get(account);
     return row ? into(row, block_num) : null;

@@ -18,19 +18,17 @@ import type { TransactionEntity } from "../types.mjs";
 
 export type DutyAction = "validate_block" | "check_in_validator";
 
+export type PriceUpdate = { token: string; price: number };
+
 export type BroadcastRequest = {
   account: string;
-  action: DutyAction;
-  params: { block_num: number; hash: string; version: string };
   /** Extra context for the log line; never sent on chain. */
   context: Record<string, unknown>;
-};
+} & ({ action: DutyAction; params: { block_num: number; hash: string; version: string } } | { action: "price_feed"; params: { updates: PriceUpdate[]; metadata?: unknown } });
 
 export interface Broadcaster {
   readonly mode: "shadow" | "live";
   send(request: BroadcastRequest): void;
-  /** Live only: whether this process signed the transaction. */
-  isOwnTransaction?(trxId: string): boolean;
 }
 
 export type DutyEvent = { status: "info" | "ok" | "warning" | "error"; msg: string; fields: Record<string, unknown> };
@@ -223,11 +221,7 @@ export class ValidatorDuties {
       } catch {
         params = {};
       }
-      // live: was it this process that signed it? (a follower such as Fire Horse filling in, or a
-      // second node still holding the key, shows up as "other")
-      const signer = this.broadcaster.isOwnTransaction ? (this.broadcaster.isOwnTransaction(tx.id) ? "self" : "other") : null;
-      const base = { action: tx.type, account: tx.player, in_block: block_num, trx_id: tx.id, block_num: params.block_num, chain_hash: params.hash, version: params.version, success: tx.success, error: tx.error, signer };
-      if (signer === "other") this.emit({ status: "warning", msg: "foreign signer", fields: base });
+      const base = { action: tx.type, account: tx.player, in_block: block_num, trx_id: tx.id, block_num: params.block_num, chain_hash: params.hash, version: params.version, success: tx.success, error: tx.error };
       if (tx.type === "validate_block") {
         const ours = params.block_num !== undefined ? this.svc.blocks.getBlockHash(params.block_num)?.l2_block_id : undefined;
         const intent = params.block_num !== undefined ? this.intents.get(params.block_num) : undefined;

@@ -48,8 +48,10 @@ export const config = {
     .filter(Boolean),
   /**
    * "shadow": duties are computed and logged, nothing is signed or sent.
-   * "live": duties are signed with VALIDATOR_KEY (posting WIF) and broadcast. The key is read
-   * once at startup (and removed from the environment); it is never part of this object.
+   * "live": duties are signed and broadcast. VALIDATOR_KEY holds one or more posting WIFs
+   * (comma-separated); each account signs with the one holding its posting authority, and an
+   * account none can sign for is skipped (kept in shadow). Keys are read once at startup and
+   * removed from process.env; they are never part of this object.
    */
   validatorMode: env("VALIDATOR_MODE", "shadow") as "shadow" | "live",
   /** Fire Horse VALIDATE_BLOCK_DELAY: 0 = leader, > 0 = follower. */
@@ -58,6 +60,28 @@ export const config = {
   checkInRetryBlocks: envInt("CHECK_IN_RETRY_BLOCKS", 100),
   /** Version string sent with validate_block / check_in_validator (recorded on chain as last_version). */
   validatorVersion: env("VALIDATOR_VERSION", "1.5.1-mini.0"),
+  /** Price feed duty for top validators (upstream PriceFeedPlugin); needs at least one external feed. */
+  enablePriceFeed: env("ENABLE_PRICE_FEED", "true") === "true",
+  /** Upstream hive_engine_rpc_nodes, in failover order. */
+  hiveEngineRpcNodes: env("HIVE_ENGINE_RPC_NODES", "https://api.hive-engine.com/rpc,https://engine.rishipanthee.com,https://herpc.dtools.dev,https://ha.herpc.dtools.dev,https://api.primersion.com,https://herpc.kanibot.com,https://ctpmain.com,https://herpc.actifit.io")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+  /** Upstream price_feed_* settings (same env names and defaults). The API keys are optional. */
+  priceFeed: {
+    dao: { api_url: env("PRICE_FEED_DAO_API_URL", "https://prices.splinterlands.workers.dev") },
+    coinGecko: {
+      api_url: env("PRICE_FEED_COIN_GECKO_API_URL", "https://pro-api.coingecko.com"),
+      demo_api_url: env("PRICE_FEED_COIN_GECKO_DEMO_API_URL", "https://coingecko.com"),
+      demo: env("PRICE_FEED_COIN_GECKO_DEMO", "false") === "true",
+      api_key: env("PRICE_FEED_COIN_GECKO_API_KEY", ""),
+    },
+    coinMarketCap: {
+      api_url: env("PRICE_FEED_COIN_MARKET_CAP_API_URL", "https://pro-api.coinmarketcap.com"),
+      api_key: env("PRICE_FEED_COIN_MARKET_CAP_API_KEY", ""),
+      token_map: JSON.parse(env("PRICE_FEED_COIN_MARKET_CAP_TOKEN_MAP", '{"HIVE":"5370"}')) as Record<string, string>,
+    },
+  },
   /** Append duty events (JSONL) here in addition to stdout. */
   dutyLog: env("DUTY_LOG", ""),
 };

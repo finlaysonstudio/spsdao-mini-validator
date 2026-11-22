@@ -2,7 +2,7 @@ import dhive from "@hiveio/dhive";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Authority, HiveAccount } from "../hive/client.mjs";
 import { PrivateKey, transactionDigest, transactionId, type SignedTransaction } from "../hive/signing.mjs";
-import { LiveBroadcaster, verifyPostingAuthority, type Chain } from "./broadcast.mjs";
+import { LiveBroadcaster, parseKeys, resolveSigners, type Chain } from "./broadcast.mjs";
 import type { BroadcastRequest, DutyEvent } from "./duties.mjs";
 
 const WIF = dhive.PrivateKey.fromSeed("mini-broadcast-test").toString();
@@ -43,7 +43,7 @@ beforeEach(() => {
 
 describe("LiveBroadcaster", () => {
   it("signs and sends the custom_json upstream's HiveClient sends", async () => {
-    const b = new LiveBroadcaster({ emit, key, chain });
+    const b = new LiveBroadcaster({ emit, signers: [{ account: "nullfame", key, via: "key" }], chain });
     b.send(request);
     await b.flush();
     expect(chain.sent).toHaveLength(1);
@@ -58,14 +58,12 @@ describe("LiveBroadcaster", () => {
     expect(signatures).toEqual(dhive.cryptoUtils.signTransaction(unsigned, [dhive.PrivateKey.fromString(WIF)]).signatures);
 
     const trxId = transactionId(unsigned);
-    expect(b.isOwnTransaction(trxId)).toBe(true);
-    expect(b.isOwnTransaction("f".repeat(40))).toBe(false);
     expect(events.map((e) => [e.status, e.msg, e.fields.trx_id])).toEqual([["info", "broadcast sent", trxId]]);
   });
 
   it("never puts the key in an event", async () => {
     chain.fail = new Error("boom");
-    const b = new LiveBroadcaster({ emit, key, chain });
+    const b = new LiveBroadcaster({ emit, signers: [{ account: "nullfame", key, via: "key" }], chain });
     b.send(request);
     await b.flush();
     expect(JSON.stringify(events)).not.toContain(WIF);
@@ -73,7 +71,7 @@ describe("LiveBroadcaster", () => {
 
   it("reports a failed send with the transaction id", async () => {
     chain.fail = new Error("RPC error: missing required posting authority");
-    const b = new LiveBroadcaster({ emit, key, chain });
+    const b = new LiveBroadcaster({ emit, signers: [{ account: "nullfame", key, via: "key" }], chain });
     b.send(request);
     await b.flush();
     expect(events).toHaveLength(1);
@@ -83,7 +81,7 @@ describe("LiveBroadcaster", () => {
 
   it("treats a duplicate (already accepted) as sent", async () => {
     chain.fail = new Error("RPC error: Duplicate transaction check failed");
-    const b = new LiveBroadcaster({ emit, key, chain });
+    const b = new LiveBroadcaster({ emit, signers: [{ account: "nullfame", key, via: "key" }], chain });
     b.send(request);
     await b.flush();
     expect(events[0]).toMatchObject({ status: "info", msg: "broadcast sent", fields: { duplicate: true } });
@@ -93,7 +91,7 @@ describe("LiveBroadcaster", () => {
     chain.getDynamicGlobalProperties = async () => {
       throw new Error("All RPC nodes failed");
     };
-    const b = new LiveBroadcaster({ emit, key, chain });
+    const b = new LiveBroadcaster({ emit, signers: [{ account: "nullfame", key, via: "key" }], chain });
     b.send(request);
     await b.flush();
     expect(events[0]).toMatchObject({ status: "error", msg: "broadcast failed", fields: { stage: "prepare" } });
@@ -101,29 +99,70 @@ describe("LiveBroadcaster", () => {
   });
 });
 
-describe("verifyPostingAuthority", () => {
-  it("accepts a key held directly", async () => {
-    chain.accounts.set("nullfame", { name: "nullfame", posting: auth([[key.publicKey, 1]]) });
-    expect(await verifyPostingAuthority({ accounts: ["nullfame"], key, chain })).toEqual([{ account: "nullfame", via: "key" }]);
+describe("LiveBroadcaster without a signer for the account", () => {
+  it("hands the request to the fallback with reason no_key and sends nothing", async () => {
+    const fallback: BroadcastRequest[] = [];
+    const b = new LiveBroadcaster({ emit, signers: [{ account: "someone-else", key, via: "key" }], fallback: { mode: "shadow", send: (r) => void fallback.push(r) }, chain });
+    b.send(request);
+    await b.flush();
+    expect(chain.sent).toEqual([]);
+    expect(fallback).toEqual([{ ...request, context: { ...request.context, reason: "no_key" } }]);
+  });
+});
+
+describe("parseKeys", () => {
+  it("parses several keys and reports bad ones by position only", () => {
+    const { keys, invalid } = parseKeys(`${WIF}, not-a-key ,${OTHER}`);
+    expect(keys.map((k) => k.publicKey)).toEqual([key.publicKey, other.publicKey]);
+    expect(invalid).toEqual([{ index: 1, reason: expect.any(String) }]);
+    expect(JSON.stringify(invalid)).not.toContain("not-a-key");
   });
 
-  it("accepts a key reached through an account_auths grant", async () => {
+  it("returns nothing for an empty value", () => {
+    expect(parseKeys("")).toEqual({ keys: [], invalid: [] });
+  });
+});
+
+describe("resolveSigners", () => {
+  it("uses a key held directly", async () => {
+    chain.accounts.set("nullfame", { name: "nullfame", posting: auth([[key.publicKey, 1]]) });
+    const { signers, skipped } = await resolveSigners({ accounts: ["nullfame"], keys: [other, key], chain });
+    expect(signers.map((s) => [s.account, s.key.publicKey, s.via])).toEqual([["nullfame", key.publicKey, "key"]]);
+    expect(skipped).toEqual([]);
+  });
+
+  it("uses a key reached through an account_auths grant", async () => {
     chain.accounts.set("nullfame", { name: "nullfame", posting: auth([[other.publicKey, 1]], [["operator", 1]]) });
     chain.accounts.set("operator", { name: "operator", posting: auth([[key.publicKey, 1]]) });
-    expect(await verifyPostingAuthority({ accounts: ["nullfame"], key, chain })).toEqual([{ account: "nullfame", via: "account_auth", grantee: "operator" }]);
+    const { signers } = await resolveSigners({ accounts: ["nullfame"], keys: [key], chain });
+    expect(signers.map((s) => [s.account, s.via, s.grantee])).toEqual([["nullfame", "account_auth", "operator"]]);
   });
 
-  it("rejects a key below the threshold", async () => {
-    chain.accounts.set("nullfame", { name: "nullfame", posting: auth([[key.publicKey, 1], [other.publicKey, 1]], [], 2) });
-    await expect(verifyPostingAuthority({ accounts: ["nullfame"], key, chain })).rejects.toThrow(/cannot sign .* nullfame/);
+  it("gives each account its own key and skips the ones no key can sign for", async () => {
+    chain.accounts.set("alpha", { name: "alpha", posting: auth([[key.publicKey, 1]]) });
+    chain.accounts.set("beta", { name: "beta", posting: auth([[other.publicKey, 1]]) });
+    chain.accounts.set("gamma", { name: "gamma", posting: auth([[key.publicKey, 1], [other.publicKey, 1]], [], 2) });
+    const { signers, skipped } = await resolveSigners({ accounts: ["alpha", "beta", "gamma", "nobody"], keys: [key, other], chain });
+    expect(signers.map((s) => [s.account, s.key.publicKey])).toEqual([
+      ["alpha", key.publicKey],
+      ["beta", other.publicKey],
+    ]);
+    expect(skipped).toEqual([
+      { account: "gamma", reason: "no configured key holds its posting authority" },
+      { account: "nobody", reason: "account does not exist" },
+    ]);
   });
 
-  it("rejects a key the account does not hold", async () => {
-    chain.accounts.set("nullfame", { name: "nullfame", posting: auth([[other.publicKey, 1]]) });
-    await expect(verifyPostingAuthority({ accounts: ["nullfame"], key, chain })).rejects.toThrow(/nullfame/);
+  it("skips every account when there is no valid key", async () => {
+    expect(await resolveSigners({ accounts: ["alpha"], keys: [], chain })).toEqual({ signers: [], skipped: [{ account: "alpha", reason: "no valid key configured" }] });
   });
 
-  it("rejects an unknown account", async () => {
-    await expect(verifyPostingAuthority({ accounts: ["nobody"], key, chain })).rejects.toThrow(/does not exist/);
+  it("skips every account when the lookup fails", async () => {
+    chain.getAccounts = async () => {
+      throw new Error("All RPC nodes failed");
+    };
+    const { signers, skipped } = await resolveSigners({ accounts: ["alpha"], keys: [key], chain });
+    expect(signers).toEqual([]);
+    expect(skipped[0].reason).toMatch(/lookup failed/);
   });
 });
