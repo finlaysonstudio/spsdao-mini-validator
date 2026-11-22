@@ -9,7 +9,6 @@ dist/
 # Keep config files
 !eslint.config.mjs
 !vitest.config.ts
-!vitest.workspace.ts
 !vite.config.ts
 
 # Env
@@ -28,3 +27,6 @@ coverage/
 
 # Seed data
 /seed.json
+
+# Local data (seeds, block cache, logs)
+/var/

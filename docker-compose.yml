@@ -1,0 +1,104 @@
+services:
+  validator:
+    build: .
+    container_name: spsdao-mini-validator
+    restart: unless-stopped
+    environment:
+      SEED_FILE: /data/seed.ndjson.gz
+      HASH_LOG: /data/hashes.log
+      BLOCK_CACHE_DIR: ""
+      # Catch up in 1000-block chunks (far fewer RPC calls than one per block) and
+      # resume from a checkpoint after a restart instead of replaying from the seed.
+      CHUNK_CACHE_DIR: /data/chunks
+      CHECKPOINT_DIR: /data/checkpoints
+      CHECKPOINT_EVERY: "1000"
+      CUSTOM_JSON_ID: sm_sps
+      CUSTOM_JSON_PREFIX: sm_
+      BLOCKS_BEHIND_HEAD: "6"
+      BLOCKS_HEAD_MODE: irreversible
+      # Validator duties for these accounts. VALIDATOR_MODE (default shadow: compute and log,
+      # send nothing) and VALIDATOR_KEY come from var/validator.env
+      # (scripts/make-validator-env.sh); VALIDATOR_MODE=live there signs and broadcasts.
+      VALIDATOR_ACCOUNTS: nullfame
+      VALIDATE_BLOCK_DELAY: "0"
+      DUTY_LOG: /data/duties.log
+    env_file:
+      - path: ./var/validator.env
+        required: false
+    volumes:
+      - ./var/validator:/data
+    mem_limit: 4g
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # Compares the validator's hash log with the upstream validator's database once a minute.
+  # Needs var/checker.env (PGUSER/PGPASSWORD): run scripts/make-checker-env.sh first.
+  checker:
+    build: .
+    container_name: spsdao-mini-checker
+    restart: unless-stopped
+    command: ["node", "packages/validator/dist/check.mjs"]
+    environment:
+      HASH_LOG: /data/hashes.log
+      PGHOST: pg
+      PGPORT: "5432"
+      PGDATABASE: validator
+      CHECK_INTERVAL_SECONDS: "60"
+      CHECK_WINDOW: "5000"
+      CHECK_MAX_LAG: "100"
+    env_file:
+      - var/checker.env
+    volumes:
+      - ./var/validator:/data:ro
+    networks:
+      - default
+      - upstream_pg
+    depends_on:
+      - validator
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # Replay from upstream's initial snapshot (var/genesis). Separate profile: never started by a
+  # plain `docker compose up`. Run: docker compose --profile genesis up -d --build genesis
+  # Diagnose: docker compose --profile genesis run --rm genesis node --no-use-std-math-pow --import tsx tools/diff-block.mts <block>
+  genesis:
+    profiles: ["genesis"]
+    build:
+      context: .
+      target: dev
+    image: spsdao-mini-validator:dev
+    container_name: spsdao-mini-genesis
+    working_dir: /app/packages/validator
+    command: ["node", "--no-use-std-math-pow", "--max-old-space-size=4096", "dist/main.mjs"]
+    restart: "no"
+    environment:
+      SEED_FILE: /genesis/seed-93703455.ndjson.gz
+      CHUNK_CACHE_DIR: /genesis/chunks
+      CHECKPOINT_DIR: /genesis/checkpoints
+      CHECKPOINT_EVERY: "100000"
+      VERIFY_EVERY: "10000"
+      REFERENCE_API: https://splinterlands-validator-api.splinterlands.com
+      HASH_LOG: /genesis/run/hashes.log
+      CUSTOM_JSON_ID: sm_sps
+      CUSTOM_JSON_PREFIX: sm_
+    volumes:
+      - ./var/genesis:/genesis
+    mem_limit: 6g
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+networks:
+  # The upstream validator's compose network, so the checker can reach its `pg` service.
+  upstream_pg:
+    external: true
+    name: "validator:postgres"

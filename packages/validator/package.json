@@ -2,44 +2,63 @@
   "name": "@spsdao/validator",
   "version": "0.1.0",
   "private": true,
-  "description": "Lightweight SPS validator observer - computes L2 hashes from Hive blocks",
+  "description": "Minimal SPS validator: replays Hive blocks in memory, computes L2 block hashes and performs validator duties",
   "type": "module",
   "exports": {
-    "./pipeline": "./src/pipeline.mts",
+    ".": "./src/lib.mts",
+    "./lib": "./src/lib.mts",
+    "./services": "./src/services.mts",
     "./state": "./src/state/index.mts",
-    "./bootstrap": "./src/bootstrap/index.mts",
+    "./bootstrap/seed": "./src/bootstrap/seed.mts",
+    "./block/processor": "./src/block/processor.mts",
     "./config": "./src/config.mts",
-    "./hive/client": "./src/hive/client.mts",
-    "./hive/stream": "./src/hive/stream.mts",
-    "./hive/broadcast": "./src/hive/broadcast.mts",
-    "./hash": "./src/hash/index.mts",
-    "./verify": "./src/verify/index.mts",
-    "./validator": "./src/validator/index.mts",
     "./types": "./src/types.mts"
   },
+  "bin": {
+    "sps-mini": "dist/cli.mjs"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "prebuild": "npm run clean",
     "build": "tsc",
+    "postbuild": "node -e \"require('node:fs').chmodSync('dist/cli.mjs', 0o755)\"",
     "clean": "rimraf dist",
-    "dev": "tsx src/main.mts",
+    "dbdiff": "node --no-use-std-math-pow --import tsx tools/dbdiff.mts",
+    "dev": "node --no-use-std-math-pow --import tsx src/main.mts",
+    "diff-block": "node --no-use-std-math-pow --import tsx tools/diff-block.mts",
+    "export-seed": "node --no-use-std-math-pow --import tsx src/cli.mts export",
+    "extract-seed": "tsx tools/extract-seed.mts",
     "lint": "eslint 'src/**/*.mts'",
     "sort": "sort-package-json",
+    "start": "node --no-use-std-math-pow dist/main.mjs",
+    "start:check": "node dist/check.mjs",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hiveio/dhive": "^1.3.4",
+    "@noble/hashes": "^2.4.0",
+    "@noble/secp256k1": "^3.2.0",
+    "@scure/base": "^2.4.0",
     "js-sha256": "^0.11.0",
-    "seedrandom": "^3.0.5"
+    "pg": "^8.23.1",
+    "seedrandom": "^3.0.5",
+    "yup": "^0.32.11"
   },
   "devDependencies": {
+    "@hiveio/dhive": "^1.3.6",
     "@types/node": "^25.3.3",
+    "@types/pg": "^8.23.1",
+    "@types/pg-cursor": "^2.7.2",
     "@types/seedrandom": "^3.0.8",
+    "pg-cursor": "^2.22.1",
     "tsx": "^4.0.0",
     "typescript": "^5.7.0"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   }
 }
