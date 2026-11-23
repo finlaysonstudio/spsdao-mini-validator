@@ -34,6 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validat
 | `--dir DIR`        | Install directory (default `~/.sps-mini-validator`)                                     |
 | `--version vX.Y.Z` | Release tag (default latest)                                                            |
 | `--no-start`       | Write files only                                                                        |
+| `--no-auto-update` | Do not schedule the daily update                                                        |
 
 The installer downloads `seed-latest.ndjson.gz` (or `seed-genesis.ndjson.gz`) from the GitHub
 release, checks it against the release's `SHA256SUMS`, writes `.env` (mode 600) and starts the
@@ -60,11 +61,30 @@ which works the same for Docker, systemd and launchd installs:
 | `spud version`                    | Installed release and validator version                                                                               |
 | `spud update [--version vX.Y.Z]`  | Runs that release's `install.sh --update` (checksum-verified): keeps `.env` and data, rewrites the service and `spud` |
 | `spud update --check`             | Reports whether a newer release exists                                                                                |
+| `spud update --auto`              | Updates to the latest release if it is newer, checks it and rolls back on failure (what the daily update runs)        |
+| `spud auto-update [on\|off]`      | Shows, turns on or turns off the daily update                                                                         |
 | `spud uninstall [--purge]`        | Removes the service and `spud`; `--purge` also deletes the install directory                                          |
 | `spud help`                       | Lists the commands                                                                                                    |
 
 The install settings (mode, release tag, image) are recorded in `install.conf`, which `spud` and
 `install.sh --update` read.
+
+### Automatic updates
+
+An install updates itself once a day, at a time picked at install so installs do not all update
+at once. The scheduler is a launchd agent on macOS, a systemd user timer on Linux, or cron
+otherwise. Each run (`spud update --auto`):
+
+1. Compares the installed tag with the latest release (drafts and pre-releases are never latest).
+2. Saves the current `install.conf`, `docker-compose.yml`, `spud` and npm tarball to `cache/rollback`.
+3. Runs the release's checksum-verified `install.sh --update`, which restarts the service.
+4. Waits up to `AUTO_UPDATE_CHECK_SECONDS` (default 600) for the restarted validator to process a
+   block past where it was. If it does not, or the installer fails, it restores the saved files,
+   restarts, and does not retry that release; the next release is tried as usual.
+
+A stopped service is updated without being started. Every run is logged to `state/update.log`, and
+`spud status` shows the last result. `AUTO_UPDATE=0` in `.env` (or `spud auto-update off`) turns it
+off. On Linux, `loginctl enable-linger` keeps user timers and services running without a login.
 
 Releases (`.github/workflows/release.yml`, on tag `v*`): multi-arch image on GHCR, npm tarball,
 `install.sh`, `spud`, seeds carried forward from the previous release. `scripts/publish-seed.sh <seed>

@@ -42,6 +42,7 @@ jobs:
           if [ -n "$prev" ]; then
             gh release download "$prev" --pattern 'seed-*' --dir dist-release || true
           fi
+          echo "${GITHUB_REF_NAME}" > dist-release/RELEASE
           cd dist-release && sha256sum * > SHA256SUMS && cat SHA256SUMS
 
       - uses: docker/setup-qemu-action@v3

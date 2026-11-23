@@ -14,6 +14,7 @@
 #   --dir DIR           install directory (default ~/.sps-mini-validator)
 #   --version TAG       release tag (default: latest)
 #   --no-start          write files without starting
+#   --no-auto-update    do not schedule the daily update (`spud auto-update on` turns it on later)
 #   --update            update an existing install in <dir> (used by `spud update`): keeps .env and
 #                       data, reuses the recorded mode, skips the seed, rewrites the service and spud
 #
@@ -33,6 +34,7 @@ DIR="${HOME}/.sps-mini-validator"
 VERSION="latest"
 START=1
 UPDATE=0
+AUTO_UPDATE=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -44,7 +46,8 @@ while [ $# -gt 0 ]; do
     --version) VERSION="$2"; shift ;;
     --no-start) START=0 ;;
     --update) UPDATE=1 ;;
-    -h|--help) sed -n '2,24p' "$0" 2>/dev/null || true; exit 0 ;;
+    --no-auto-update) AUTO_UPDATE=0 ;;
+    -h|--help) sed -n '2,25p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -64,11 +67,13 @@ conf_get() { sed -n "s/^$1='\(.*\)'\$/\1/p" "$DIR/install.conf"; }
 need curl
 if [ "$UPDATE" = 1 ]; then
   [ -f "$DIR/install.conf" ] || die "no install in $DIR to update (install.conf is missing)"
-  # Reuse the recorded mode, seed and mirror.
+  # Reuse the recorded mode, seed, mirror and image.
   MODE=$(conf_get MODE)
   SEED_ASSET=$(conf_get SEED_ASSET)
   RECORDED_BASE=$(conf_get RELEASE_BASE)
   [ -z "${SPS_MINI_RELEASE_BASE:-}" ] && [ -n "$RECORDED_BASE" ] && SPS_MINI_RELEASE_BASE=$RECORDED_BASE
+  RECORDED_IMAGE=$(conf_get IMAGE)
+  [ -z "${SPS_MINI_IMAGE:-}" ] && [ -n "$RECORDED_IMAGE" ] && IMAGE=$RECORDED_IMAGE
   [ -n "$MODE" ] || die "install.conf does not record the install mode"
 fi
 # Mirror of the release assets (testing, air-gapped installs).
@@ -80,7 +85,9 @@ elif [ -z "$RELEASE_BASE" ]; then
   TAG=$(curl -fsSI -o /dev/null -w '%{redirect_url}' "https://github.com/${REPO}/releases/latest" 2>/dev/null | sed -n 's#.*/releases/tag/##p')
   [ -n "$TAG" ] || TAG="latest"
 else
-  TAG="latest"
+  # A mirror names its release in RELEASE.
+  TAG=$(curl -fsSL "${RELEASE_BASE}/RELEASE" 2>/dev/null | head -n 1 | tr -d '[:space:]')
+  [ -n "$TAG" ] || TAG="latest"
 fi
 if [ -n "$RELEASE_BASE" ]; then BASE="$RELEASE_BASE"
 elif [ "$TAG" = "latest" ]; then BASE="https://github.com/${REPO}/releases/latest/download"
@@ -157,6 +164,9 @@ install_spud() { # install_spud <mode> <service>: bin/spud, install.conf and ~/.
 }
 
 done_message() {
+  # Daily auto-update, following AUTO_UPDATE in .env (spud owns the scheduler).
+  if [ "$AUTO_UPDATE" = 0 ]; then "$CONFIG_DIR/bin/spud" auto-update off || true
+  else "$CONFIG_DIR/bin/spud" auto-update sync || true; fi
   say "Manage it with spud: spud status, spud logs -f, spud add <account>, spud update"
 }
 
@@ -174,6 +184,8 @@ VALIDATOR_ACCOUNTS=${ACCOUNTS}
 # Posting key WIF(s), comma-separated, for VALIDATOR_ACCOUNTS (required when it is set).
 VALIDATOR_KEY=
 DUTY_LOG=${STATE_DIR}/duties.log
+# Daily update to the latest release, checked and rolled back on failure (spud auto-update on|off).
+AUTO_UPDATE=${AUTO_UPDATE}
 EOF
   chmod 600 .env
   say "Wrote ${CONFIG_DIR}/.env"
