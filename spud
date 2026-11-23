@@ -15,13 +15,16 @@ usage: spud <command> [args]
   logs [-f] [-n N]             validator logs (-f follows)
   start | stop | restart       control the service
   accounts                     configured validator accounts and how many keys are set
-  add-account <name>           add a validator account (asks for its posting key) and restart
-  remove-account <name>        remove a validator account and restart
+  add <account>                add a validator account (asks for its posting key) and restart
+  remove <account>             remove a validator account and restart
+  snapshot                     list snapshots, where they are written and when the next one is due
+  snapshot now                 export a snapshot now from the newest checkpoint
   config                       edit .env; restarts when it changed
   version                      installed release and validator version
   update [--version TAG]       reinstall from the latest (or given) release with its installer
   update --check               report whether a newer release exists
   uninstall [--purge]          remove the service and spud; --purge also deletes the install directory
+  help                         this list
 EOF
 }
 
@@ -189,8 +192,8 @@ read_secret() { # read_secret <prompt>: read a line from the terminal without ec
   printf '\n' > /dev/tty
 }
 
-cmd_add_account() {
-  [ $# -eq 1 ] || die "usage: spud add-account <name>"
+cmd_add() {
+  [ $# -eq 1 ] || die "usage: spud add <account>"
   name=$1
   valid_account "$name" || die "not a Hive account name: $name"
   accounts=$(env_get VALIDATOR_ACCOUNTS)
@@ -221,8 +224,8 @@ cmd_add_account() {
   restart_and_report "$(env_get VALIDATOR_ACCOUNTS | tr ',' ' ')"
 }
 
-cmd_remove_account() {
-  [ $# -eq 1 ] || die "usage: spud remove-account <name>"
+cmd_remove() {
+  [ $# -eq 1 ] || die "usage: spud remove <account>"
   accounts=$(env_get VALIDATOR_ACCOUNTS)
   list_has "$accounts" "$1" || die "$1 is not configured"
   SPUD_VALUE=$(printf '%s\n' "$accounts" | tr ',' '\n' | grep -vx "$1" | paste -sd, -)
@@ -241,6 +244,66 @@ cmd_config() {
   if [ "$(cksum < "$ENV")" = "$before" ]; then say "No changes"; return; fi
   accounts=$(env_get VALIDATOR_ACCOUNTS | tr ',' ' ')
   if [ -n "$accounts" ]; then restart_and_report "$accounts"; else quiet_restart && say "Restarted"; fi
+}
+
+# ------------------------------------------------------------------ snapshots
+# Data paths as the validator sees them (/data inside the container) and as they are on this host.
+if [ "$MODE" = docker ]; then
+  SNAP_HOST="$DIR/data/snapshots" SNAP_RUN=/data/snapshots CKPT_HOST="$DIR/data/checkpoints" CKPT_RUN=/data/checkpoints
+else
+  SNAP_HOST=$(env_get SNAPSHOT_DIR) CKPT_HOST=$(env_get CHECKPOINT_DIR)
+  SNAP_RUN=$SNAP_HOST CKPT_RUN=$CKPT_HOST
+fi
+
+json_field() { sed -n "s/^ *\"$1\": *\"\{0,1\}\([^\",]*\).*/\1/p" "$2" | head -n 1; }
+mb() { awk -v b="$1" 'BEGIN { printf "%.0f MB", b / 1048576 }'; }
+
+# Run the validator CLI against the install's data (a one-off container for docker).
+validator_cli() {
+  case "$MODE" in
+    docker) dc run --rm --no-deps -T validator node packages/validator/dist/cli.mjs "$@" ;;
+    native) "$BIN" "$@" ;;
+  esac
+}
+
+cmd_snapshot() {
+  case "${1:-}" in
+    "") ;;
+    now) snapshot_now; return ;;
+    *) die "usage: spud snapshot [now]" ;;
+  esac
+  [ -n "$SNAP_HOST" ] || die "SNAPSHOT_DIR is not set in $ENV; snapshots are off"
+  every=$(env_get SNAPSHOT_EVERY); every=${every:-28800}
+  keep=$(env_get SNAPSHOT_KEEP); keep=${keep:-3}
+  printf 'directory %s\n' "$SNAP_HOST"
+  printf 'schedule  every %s blocks (about %s h at 3 s a block), newest %s kept\n' "$every" "$((every * 3 / 3600))" "$keep"
+  found=""
+  for m in "$SNAP_HOST"/seed-*.manifest.json; do
+    [ -f "$m" ] || continue
+    found=1
+    printf '  %s  block %s  %s  %s\n' "$(json_field file "$m" | sed 's#.*/##')" "$(json_field block_num "$m")" "$(mb "$(json_field bytes "$m")")" "$(json_field exported_at "$m")"
+  done
+  [ -n "$found" ] || echo "  none yet"
+  hashes="$STATE_DIR/hashes.log"
+  if [ -s "$hashes" ]; then
+    block=$(tail -n 1 "$hashes" | cut -d' ' -f1)
+    next=$(((block / every + 1) * every))
+    printf 'next      block %s (in about %s min)\n' "$next" "$(((next - block) * 3 / 60))"
+  fi
+}
+
+snapshot_now() {
+  [ -n "$SNAP_HOST" ] || die "SNAPSHOT_DIR is not set in $ENV"
+  [ -n "$CKPT_HOST" ] || die "CHECKPOINT_DIR is not set in $ENV"
+  block=$(ls "$CKPT_HOST" 2>/dev/null | sed -n 's/^checkpoint-0*\([0-9][0-9]*\)\.v8\.gz$/\1/p' | sort -n | tail -n 1)
+  [ -n "$block" ] || die "no checkpoints in $CKPT_HOST yet"
+  name="seed-$(printf '%010d' "$block").ndjson.gz"
+  [ -f "$SNAP_HOST/$name" ] && { say "$name already exists"; return; }
+  mkdir -p "$SNAP_HOST"
+  say "Exporting block $block from the newest checkpoint (about a minute, verified by reloading it)"
+  out=$(validator_cli export "$CKPT_RUN" "$SNAP_RUN/$name" "$block" --verify 2>&1) || { printf '%s\n' "$out" >&2; die "export failed"; }
+  m="$SNAP_HOST/${name%.ndjson.gz}.manifest.json"
+  say "Wrote $SNAP_HOST/$name ($(mb "$(json_field bytes "$m")"), sha256 $(json_field sha256 "$m"))"
 }
 
 latest_tag() {
@@ -328,8 +391,9 @@ case "$cmd" in
   stop) svc_stop ;;
   restart) svc_restart ;;
   accounts) cmd_accounts ;;
-  add-account) cmd_add_account "$@" ;;
-  remove-account) cmd_remove_account "$@" ;;
+  add) cmd_add "$@" ;;
+  remove) cmd_remove "$@" ;;
+  snapshot) cmd_snapshot "$@" ;;
   config) cmd_config ;;
   version) cmd_version ;;
   update) cmd_update "$@" ;;

@@ -157,7 +157,7 @@ install_spud() { # install_spud <mode> <service>: bin/spud, install.conf and ~/.
 }
 
 done_message() {
-  say "Manage it with spud: spud status, spud logs -f, spud add-account <name>, spud update"
+  say "Manage it with spud: spud status, spud logs -f, spud add <account>, spud update"
 }
 
 # ---------------------------------------------------------------- config

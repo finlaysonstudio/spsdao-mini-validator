@@ -52,13 +52,16 @@ which works the same for Docker, systemd and launchd installs:
 | `spud logs [-f] [-n N]`           | Validator logs                                                                                                        |
 | `spud start` / `stop` / `restart` | Control the service                                                                                                   |
 | `spud accounts`                   | Configured accounts and how many posting keys are set (never the keys)                                                |
-| `spud add-account <name>`         | Asks for the posting key without echo, adds it, restarts, reports each account                                        |
-| `spud remove-account <name>`      | Removes the account and restarts                                                                                      |
+| `spud add <account>`              | Asks for the posting key without echo, adds it, restarts, reports each account                                        |
+| `spud remove <account>`           | Removes the account and restarts                                                                                      |
+| `spud snapshot`                   | Lists snapshots, their directory, the schedule and the next snapshot block                                            |
+| `spud snapshot now`               | Exports a snapshot from the newest checkpoint and verifies it reloads                                                 |
 | `spud config`                     | Edits `.env`; restarts when it changed                                                                                |
 | `spud version`                    | Installed release and validator version                                                                               |
 | `spud update [--version vX.Y.Z]`  | Runs that release's `install.sh --update` (checksum-verified): keeps `.env` and data, rewrites the service and `spud` |
 | `spud update --check`             | Reports whether a newer release exists                                                                                |
 | `spud uninstall [--purge]`        | Removes the service and `spud`; `--purge` also deletes the install directory                                          |
+| `spud help`                       | Lists the commands                                                                                                    |
 
 The install settings (mode, release tag, image) are recorded in `install.conf`, which `spud` and
 `install.sh --update` read.
@@ -154,6 +157,8 @@ instead of an upstream database or the genesis replay.
   64-bit hashes), `hive_account_authority` and `promise_closed_tables`. Rows keep each store's
   iteration order. Unlike checkpoints (`.v8.gz`, V8 serialization of this build's classes), seeds
   are independent of the Node version and of internal field layout.
+- An install writes snapshots to `~/.sps-mini-validator/data/snapshots` every 28800 blocks (about
+  a day, on multiples of `SNAPSHOT_EVERY`) and keeps the newest 3 (`SNAPSHOT_KEEP`).
 - With `SNAPSHOT_DIR` set, the runner writes `seed-<block>.ndjson.gz`, `seed-<block>.manifest.json`
   (`block_num`, `l2_block_id`, `bytes`, `sha256`, ...) and `latest.json`. With `REFERENCE_API` set,
   the block is verified first and nothing is exported on a mismatch.
