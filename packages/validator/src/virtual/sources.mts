@@ -28,15 +28,6 @@ export class ClearBurnedTokensSource implements VirtualPayloadSource {
   }
 }
 
-export class PoolClaimPayloads implements VirtualPayloadSource {
-  process(): ProcessResult[] {
-    return []; // no autonomous pools are configured
-  }
-  trx_id(block: BlockRef): string {
-    return `claim_${block.block_num}@${block.block_time.getTime()}`;
-  }
-}
-
 export class UpdateMissedBlocksSource implements VirtualPayloadSource {
   constructor(private readonly svc: Services) {}
 
@@ -81,7 +72,7 @@ export class UpdateMissedBlocksSource implements VirtualPayloadSource {
 export function virtualSources(svc: Services): VirtualPayloadSource[] {
   return [
     svc.unstaking,
-    new PoolClaimPayloads(),
+    svc.poolClaims,
     new ClearBurnedTokensSource(svc),
     svc.promiseManager,
     svc.licenseManager,

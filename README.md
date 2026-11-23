@@ -290,12 +290,20 @@ The checker joins the upstream compose network (`validator:postgres`) and reads 
 
 ## Known gaps
 
-Paths that upstream can take but that never occur on the current chain are not ported and
-raise `UnsupportedPathError` (which aborts processing rather than silently diverging):
-`config_update` by an admin, the legacy `validator_tranche_info` shop sale, pool admin
-actions (`add_pool`, `update_pool`, `disable_pool`, `claim_pool`), the legacy admin price feed,
-and the one-time transition actions. `fulfill_promise_multi` is ported but its multi-row
-`RETURNING` order is approximated (never seen on chain).
+Every operation of upstream 1.5.1 is ported, including admin `config_update` (with its config
+validation and reload), the `validator_tranche_info` license sale and configured shop sales, the
+autonomous pool actions (`add_pool`, `update_pool`, `disable_pool`, `claim_pool`), the legacy admin
+price feed and the five transition actions. Remaining limits:
+
+- A staking pool `stop_date_utc` earlier than the oldest retained block (the newest 5000 blocks)
+  cannot be resolved to a block number and stops the node.
+- `fulfill_promise_multi` is ported but its multi-row `RETURNING` order is approximated (never seen
+  on chain).
+
+An action that fails outside validation stops the node with one error line, `operation failed,
+stopping` (or `unsupported operation, stopping` for a path that is not ported), carrying
+`block_num`, `trx_id`, `action`, `account` and `reason`; for example `add_pool` while config has no
+`sps.inflation_pools` row, or a shop sale while no SPS price is known.
 
 Memory: about 0.9 GB RSS after loading the current seed (2.6M Hive account names, 1.4M
 promise ids, 1.5M rental ids are kept as 64-bit hashes).

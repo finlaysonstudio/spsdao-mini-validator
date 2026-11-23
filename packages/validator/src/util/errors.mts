@@ -97,3 +97,20 @@ export class ValidationError extends ActionError {
 
 /** Thrown when we hit a code path we have not ported faithfully. */
 export class UnsupportedPathError extends Error {}
+
+export type OperationErrorContext = { block_num: number; trx_id: string; action: string; account: string };
+
+/**
+ * An action failed outside validation (an UnsupportedPathError, or an error upstream does not
+ * catch either, which stops the upstream node on the same block). Processing cannot continue.
+ */
+export class OperationError extends Error {
+  readonly unsupported: boolean;
+  constructor(readonly context: OperationErrorContext, readonly cause: unknown) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    const kind = cause instanceof UnsupportedPathError ? "unsupported operation" : "operation failed";
+    super(`${kind} ${context.action} (${context.trx_id}) by ${context.account} at block ${context.block_num}: ${reason}`);
+    this.name = "OperationError";
+    this.unsupported = cause instanceof UnsupportedPathError;
+  }
+}

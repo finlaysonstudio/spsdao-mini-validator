@@ -5,8 +5,10 @@ import { ConfigLoader } from "./repos/config.mjs";
 import { ActiveDelegationsRepository, DelegationManager, RentalDelegationExpirationSource, RentalDelegationRepository } from "./repos/delegations.mjs";
 import { HiveAccountRepository } from "./repos/hive_accounts.mjs";
 import { CheckInRepository, LicenseManager } from "./repos/license_manager.mjs";
+import { PoolClaimPayloads, PoolManager } from "./repos/pool_manager.mjs";
 import { PriceFeedProducer, PriceHistoryRepository } from "./repos/price_feed.mjs";
 import { DelegationOfferPromiseHandler, DelegationPromiseHandler, PromiseManager, PromiseRepository } from "./repos/promises.mjs";
+import { ValidatorShop } from "./repos/shop.mjs";
 import { StakingRewardsRepository } from "./repos/staking_rewards.mjs";
 import { TRANSITION_POINTS, TransitionManager } from "./repos/transitions.mjs";
 import { TokenUnstakingRepository } from "./repos/unstaking.mjs";
@@ -35,6 +37,9 @@ export class Services {
   readonly delegationManager: DelegationManager;
   readonly promises: PromiseRepository;
   readonly promiseManager: PromiseManager;
+  readonly poolManager: PoolManager;
+  readonly poolClaims: PoolClaimPayloads;
+  readonly shop: ValidatorShop;
 
   constructor(readonly state: StateStore, readonly prefix: PrefixOpts) {
     this.config = new ConfigLoader(state);
@@ -49,7 +54,7 @@ export class Services {
     this.checkIns = new CheckInRepository(state);
     this.licenseManager = new LicenseManager(prefix.custom_json_id, this.checkIns, this.stakingRewards, this.balances, this.config, this.blocks);
     this.priceHistory = new PriceHistoryRepository(state);
-    this.priceFeed = new PriceFeedProducer(this.priceHistory, this.validators, this.config);
+    this.priceFeed = new PriceFeedProducer(this.priceHistory, this.validators, this.config, this.blocks);
     this.delegations = new ActiveDelegationsRepository(state, this.balances, this.unstaking);
     this.rentals = new RentalDelegationRepository(state);
     this.rentalExpiration = new RentalDelegationExpirationSource(prefix.custom_json_id, this.rentals, TRANSITION_POINTS.delegation_offer_block);
@@ -62,5 +67,15 @@ export class Services {
       new DelegationPromiseHandler(this.delegationManager),
       new DelegationOfferPromiseHandler(this.delegationManager, this.rentals, this.promises, this.config),
     );
+    this.poolManager = new PoolManager(this.config, this.balances);
+    this.poolClaims = new PoolClaimPayloads(prefix.custom_json_id, this.poolManager);
+    // ValidatorShop's clock is the last processed block (LastBlockCache)
+    const clock = {
+      current: () => {
+        const n = this.blocks.getLatestBlockNum();
+        return n === null ? undefined : this.blocks.getByBlockNum(n)?.block_time;
+      },
+    };
+    this.shop = new ValidatorShop(this.config, clock, this.balances, this.priceFeed);
   }
 }

@@ -21,6 +21,7 @@ import { streamBlocks } from "./hive/stream.mjs";
 import { Services } from "./services.mjs";
 import { listCheckpoints, loadCheckpoint, pruneCheckpoints, writeCheckpoint } from "./state/checkpoint.mjs";
 import { StateStore } from "./state/index.mjs";
+import { OperationError } from "./util/errors.mjs";
 import { error, log, logStatus, warn } from "./util/log.mjs";
 import { LiveBroadcaster, parseKeys, resolveSigners } from "./validator/broadcast.mjs";
 import { configuredFeeds, HiveEngine, PriceFeedDuty } from "./validator/price_feed.mjs";
@@ -209,6 +210,15 @@ async function main() {
 }
 
 main().catch((err) => {
+  if (err instanceof OperationError) {
+    const cause = err.cause instanceof Error ? err.cause : undefined;
+    error(err.unsupported ? "unsupported operation, stopping" : "operation failed, stopping", {
+      ...err.context,
+      reason: cause?.message ?? String(err.cause),
+      error: cause?.stack ?? String(err.cause),
+    });
+    process.exit(1);
+  }
   error("fatal", { error: err instanceof Error ? (err.stack ?? err.message) : String(err) });
   process.exit(1);
 });
