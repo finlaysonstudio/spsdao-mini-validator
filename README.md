@@ -1,8 +1,8 @@
-# SPS DAO Mini Validator - _Spud_
+# SPS DAO Mini Validator - _Spud_ 🥔
 
-A minimal SPS validator, small enough to run on a potato. _Spud_ implements the consensus algorithm, check-ins, and top validator price feeds 100x faster with 100x less disk space.
+A minimal SPS validator, small enough to run on a potato. 
 
-_Spud_ solves two pain points with the reference validator, [TheSPSDAO/SPS-Validator](https://github.com/TheSPSDAO/SPS-Validator):
+_Spud_ implements the consensus algorithm, check-ins, and top validator price feeds 100x faster with 100x less disk space. _Spud_ solves two pain points with the reference validator, [TheSPSDAO/SPS-Validator](https://github.com/TheSPSDAO/SPS-Validator):
 
 1. The installation process requires a lot of disk space
 2. Catching up to head takes a long time
