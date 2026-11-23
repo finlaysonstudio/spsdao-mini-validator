@@ -10,16 +10,16 @@
 #   --genesis           start from the genesis seed (block 93703455) and replay to head (hours, ~6 GB
 #                       chunk cache) instead of the latest published seed
 #   --accounts a,b      validator accounts to perform duties for; add their posting key(s) as
-#                       VALIDATOR_KEY in the config .env before starting
-#   --dir DIR           keep everything under DIR instead of the XDG directories below
+#                       VALIDATOR_KEY in <dir>/.env before starting
+#   --dir DIR           install directory (default ~/.sps-mini-validator)
 #   --version TAG       release tag (default: latest)
 #   --no-start          write files without starting
 #
-# Files follow the XDG Base Directory Specification:
-#   config  ${XDG_CONFIG_HOME:-~/.config}/sps-mini-validator       .env, docker-compose.yml, run.sh
-#   data    ${XDG_DATA_HOME:-~/.local/share}/sps-mini-validator    seed, checkpoints, snapshots
-#   cache   ${XDG_CACHE_HOME:-~/.cache}/sps-mini-validator         block chunk cache, downloads
-#   state   ${XDG_STATE_HOME:-~/.local/state}/sps-mini-validator   hashes.log, duties.log, service log
+# Layout under <dir>:
+#   .env, docker-compose.yml, run.sh
+#   data/    seed, checkpoints, snapshots
+#   cache/   block chunk cache, downloads
+#   state/   hashes.log, duties.log, service log
 set -eu
 
 REPO="finlaysonstudio/spsdao-mini-validator"
@@ -27,7 +27,7 @@ IMAGE="${SPS_MINI_IMAGE:-ghcr.io/finlaysonstudio/spsdao-mini-validator}"
 MODE="docker"
 SEED="latest"
 ACCOUNTS=""
-DIR=""
+DIR="${HOME}/.sps-mini-validator"
 VERSION="latest"
 START=1
 
@@ -50,17 +50,10 @@ say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
 
-if [ -n "$DIR" ]; then
-  CONFIG_DIR="$DIR"
-  DATA_DIR="$DIR/data"
-  CACHE_DIR="$DIR/cache"
-  STATE_DIR="$DIR/state"
-else
-  CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/sps-mini-validator"
-  DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/sps-mini-validator"
-  CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/sps-mini-validator"
-  STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/sps-mini-validator"
-fi
+CONFIG_DIR="$DIR"
+DATA_DIR="$DIR/data"
+CACHE_DIR="$DIR/cache"
+STATE_DIR="$DIR/state"
 
 need curl
 if [ "$VERSION" = "latest" ]; then

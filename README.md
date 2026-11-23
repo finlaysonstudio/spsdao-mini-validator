@@ -33,17 +33,15 @@ curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validat
 | ------------------ | --------------------------------------------------------------------------------------- |
 | `--accounts a,b`   | Validator accounts to perform duties for; set `VALIDATOR_KEY` in `.env` before starting |
 | `--genesis`        | Start from the genesis seed (block 93703455) and replay to head                         |
-| `--dir DIR`        | Keep everything under `DIR` instead of the XDG directories                              |
+| `--dir DIR`        | Install directory (default `~/.sps-mini-validator`)                                     |
 | `--version vX.Y.Z` | Release tag (default latest)                                                            |
 | `--no-start`       | Write files only                                                                        |
 
 The installer downloads `seed-latest.ndjson.gz` (or `seed-genesis.ndjson.gz`) from the GitHub
 release, checks it against the release's `SHA256SUMS`, writes `.env` (mode 600) and starts the
 service. With `--accounts` it waits for `VALIDATOR_KEY` to be added to `.env` instead of starting. `sps-mini-validator verify <seed>` also checks a seed's hash against the Splinterlands archive API.
-Files follow the XDG Base Directory Specification (each honours its `XDG_*_HOME` variable):
-configuration (`.env`, see Environment) in `~/.config/sps-mini-validator`, seed, checkpoints and
-snapshots in `~/.local/share/sps-mini-validator`, the chunk cache in `~/.cache/sps-mini-validator`,
-and logs in `~/.local/state/sps-mini-validator`.
+Everything is installed under `~/.sps-mini-validator`: configuration in `.env` (see Environment),
+seed, checkpoints and snapshots in `data/`, the chunk cache in `cache/`, and logs in `state/`.
 
 Releases (`.github/workflows/release.yml`, on tag `v*`): multi-arch image on GHCR, npm tarball,
 `install.sh`, seeds carried forward from the previous release. `scripts/publish-seed.sh <seed>
