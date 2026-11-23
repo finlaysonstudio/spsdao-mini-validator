@@ -23,4 +23,4 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: node packages/validator/dist/cli.mjs version
-      - run: sh -n install.sh && sh -n smv
+      - run: sh -n install.sh && sh -n spud

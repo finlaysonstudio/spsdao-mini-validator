@@ -14,11 +14,12 @@
 #   --dir DIR           install directory (default ~/.sps-mini-validator)
 #   --version TAG       release tag (default: latest)
 #   --no-start          write files without starting
-#   --update            update an existing install in <dir> (used by `smv update`): keeps .env and
-#                       data, reuses the recorded mode, skips the seed, rewrites the service and smv
+#   --no-auto-update    do not schedule the daily update (`spud auto-update on` turns it on later)
+#   --update            update an existing install in <dir> (used by `spud update`): keeps .env and
+#                       data, reuses the recorded mode, skips the seed, rewrites the service and spud
 #
 # Layout under <dir>:
-#   .env, install.conf, docker-compose.yml, run.sh, bin/smv (also linked from ~/.local/bin/smv)
+#   .env, install.conf, docker-compose.yml, run.sh, bin/spud (also linked from ~/.local/bin/spud)
 #   data/    seed, checkpoints, snapshots
 #   cache/   block chunk cache, downloads
 #   state/   hashes.log, duties.log, service log
@@ -33,6 +34,7 @@ DIR="${HOME}/.sps-mini-validator"
 VERSION="latest"
 START=1
 UPDATE=0
+AUTO_UPDATE=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -44,7 +46,8 @@ while [ $# -gt 0 ]; do
     --version) VERSION="$2"; shift ;;
     --no-start) START=0 ;;
     --update) UPDATE=1 ;;
-    -h|--help) sed -n '2,24p' "$0" 2>/dev/null || true; exit 0 ;;
+    --no-auto-update) AUTO_UPDATE=0 ;;
+    -h|--help) sed -n '2,25p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -64,11 +67,13 @@ conf_get() { sed -n "s/^$1='\(.*\)'\$/\1/p" "$DIR/install.conf"; }
 need curl
 if [ "$UPDATE" = 1 ]; then
   [ -f "$DIR/install.conf" ] || die "no install in $DIR to update (install.conf is missing)"
-  # Reuse the recorded mode, seed and mirror.
+  # Reuse the recorded mode, seed, mirror and image.
   MODE=$(conf_get MODE)
   SEED_ASSET=$(conf_get SEED_ASSET)
   RECORDED_BASE=$(conf_get RELEASE_BASE)
   [ -z "${SPS_MINI_RELEASE_BASE:-}" ] && [ -n "$RECORDED_BASE" ] && SPS_MINI_RELEASE_BASE=$RECORDED_BASE
+  RECORDED_IMAGE=$(conf_get IMAGE)
+  [ -z "${SPS_MINI_IMAGE:-}" ] && [ -n "$RECORDED_IMAGE" ] && IMAGE=$RECORDED_IMAGE
   [ -n "$MODE" ] || die "install.conf does not record the install mode"
 fi
 # Mirror of the release assets (testing, air-gapped installs).
@@ -80,7 +85,9 @@ elif [ -z "$RELEASE_BASE" ]; then
   TAG=$(curl -fsSI -o /dev/null -w '%{redirect_url}' "https://github.com/${REPO}/releases/latest" 2>/dev/null | sed -n 's#.*/releases/tag/##p')
   [ -n "$TAG" ] || TAG="latest"
 else
-  TAG="latest"
+  # A mirror names its release in RELEASE.
+  TAG=$(curl -fsSL "${RELEASE_BASE}/RELEASE" 2>/dev/null | head -n 1 | tr -d '[:space:]')
+  [ -n "$TAG" ] || TAG="latest"
 fi
 if [ -n "$RELEASE_BASE" ]; then BASE="$RELEASE_BASE"
 elif [ "$TAG" = "latest" ]; then BASE="https://github.com/${REPO}/releases/latest/download"
@@ -118,18 +125,18 @@ else
   say "Updating ${CONFIG_DIR} to ${TAG}"
 fi
 
-# ---------------------------------------------------------------- smv
+# ---------------------------------------------------------------- spud
 q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
-install_smv() { # install_smv <mode> <service>: bin/smv, install.conf and ~/.local/bin/smv
+install_spud() { # install_spud <mode> <service>: bin/spud, install.conf and ~/.local/bin/spud
   mkdir -p "$CONFIG_DIR/bin"
-  fetch smv "$CONFIG_DIR/bin/smv.new"
-  verify smv "$CONFIG_DIR/bin/smv.new"
-  chmod 755 "$CONFIG_DIR/bin/smv.new"
-  # A rename, so a running smv keeps reading the file it started with.
-  mv "$CONFIG_DIR/bin/smv.new" "$CONFIG_DIR/bin/smv"
+  fetch spud "$CONFIG_DIR/bin/spud.new"
+  verify spud "$CONFIG_DIR/bin/spud.new"
+  chmod 755 "$CONFIG_DIR/bin/spud.new"
+  # A rename, so a running spud keeps reading the file it started with.
+  mv "$CONFIG_DIR/bin/spud.new" "$CONFIG_DIR/bin/spud"
   {
-    echo "# Written by install.sh; read by smv and by install.sh --update."
+    echo "# Written by install.sh; read by spud and by install.sh --update."
     echo "MODE=$(q "$1")"
     echo "SERVICE=$(q "$2")"
     echo "REPO=$(q "$REPO")"
@@ -144,15 +151,23 @@ install_smv() { # install_smv <mode> <service>: bin/smv, install.conf and ~/.loc
   } > "$CONFIG_DIR/install.conf.new"
   mv "$CONFIG_DIR/install.conf.new" "$CONFIG_DIR/install.conf"
   mkdir -p "$HOME/.local/bin"
-  ln -sf "$CONFIG_DIR/bin/smv" "$HOME/.local/bin/smv"
+  ln -sf "$CONFIG_DIR/bin/spud" "$HOME/.local/bin/spud"
+  # v0.2.0 installed this command as smv.
+  if [ -L "$HOME/.local/bin/smv" ] && [ "$(readlink "$HOME/.local/bin/smv")" = "$CONFIG_DIR/bin/smv" ]; then
+    rm -f "$HOME/.local/bin/smv"
+  fi
+  rm -f "$CONFIG_DIR/bin/smv"
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) ;;
-    *) say "Add ~/.local/bin to PATH to run smv (or run ${CONFIG_DIR}/bin/smv)" ;;
+    *) say "Add ~/.local/bin to PATH to run spud (or run ${CONFIG_DIR}/bin/spud)" ;;
   esac
 }
 
 done_message() {
-  say "Manage it with smv: smv status, smv logs -f, smv add-account <name>, smv update"
+  # Daily auto-update, following AUTO_UPDATE in .env (spud owns the scheduler).
+  if [ "$AUTO_UPDATE" = 0 ]; then "$CONFIG_DIR/bin/spud" auto-update off || true
+  else "$CONFIG_DIR/bin/spud" auto-update sync || true; fi
+  say "Manage it with spud: spud status, spud logs -f, spud add <account>, spud update"
 }
 
 # ---------------------------------------------------------------- config
@@ -169,6 +184,8 @@ VALIDATOR_ACCOUNTS=${ACCOUNTS}
 # Posting key WIF(s), comma-separated, for VALIDATOR_ACCOUNTS (required when it is set).
 VALIDATOR_KEY=
 DUTY_LOG=${STATE_DIR}/duties.log
+# Daily update to the latest release, checked and rolled back on failure (spud auto-update on|off).
+AUTO_UPDATE=${AUTO_UPDATE}
 EOF
   chmod 600 .env
   say "Wrote ${CONFIG_DIR}/.env"
@@ -213,7 +230,7 @@ EOF
   # The image runs as uid 1000 (node).
   chmod -R a+rwX "$DATA_DIR" "$CACHE_DIR" "$STATE_DIR" 2>/dev/null || true
   say "Wrote ${CONFIG_DIR}/docker-compose.yml"
-  install_smv docker docker
+  install_spud docker docker
   if [ "$START" = 1 ]; then
     docker compose pull --ignore-pull-failures
     docker compose up -d
@@ -262,7 +279,7 @@ RestartSec=10
 [Install]
 WantedBy=default.target
 EOF
-    install_smv native systemd
+    install_spud native systemd
     systemctl --user daemon-reload
     if [ "$START" = 1 ]; then
       systemctl --user enable sps-mini-validator
@@ -288,7 +305,7 @@ EOF
 </dict>
 </plist>
 EOF
-    install_smv native launchd
+    install_spud native launchd
     if [ "$START" = 1 ]; then
       launchctl bootout "gui/$(id -u)/net.spsdao.mini-validator" 2>/dev/null || true
       launchctl bootstrap "gui/$(id -u)" "$PLIST"
@@ -296,7 +313,7 @@ EOF
     fi
     ;;
   *)
-    install_smv native none
+    install_spud native none
     say "No service manager support for $(uname -s); run ${CONFIG_DIR}/run.sh"
     ;;
 esac

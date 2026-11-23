@@ -1,8 +1,8 @@
-# SPS DAO Mini Validator - _Spud_
+# SPS DAO Mini Validator - _Spud_ 🥔
 
-A minimal SPS validator, small enough to run on a potato. _Spud_ implements the consensus algorithm, check-ins, and top validator price feeds 100x faster with 100x less disk space.
+A minimal SPS validator, small enough to run on a potato. 
 
-_Spud_ solves two pain points with the reference validator, [TheSPSDAO/SPS-Validator](https://github.com/TheSPSDAO/SPS-Validator):
+_Spud_ implements the consensus algorithm, check-ins, and top validator price feeds 100x faster with 100x less disk space. _Spud_ solves two pain points with the reference validator, [TheSPSDAO/SPS-Validator](https://github.com/TheSPSDAO/SPS-Validator):
 
 1. The installation process requires a lot of disk space
 2. Catching up to head takes a long time
@@ -34,6 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validat
 | `--dir DIR`        | Install directory (default `~/.sps-mini-validator`)                                     |
 | `--version vX.Y.Z` | Release tag (default latest)                                                            |
 | `--no-start`       | Write files only                                                                        |
+| `--no-auto-update` | Do not schedule the daily update                                                        |
 
 The installer downloads `seed-latest.ndjson.gz` (or `seed-genesis.ndjson.gz`) from the GitHub
 release, checks it against the release's `SHA256SUMS`, writes `.env` (mode 600) and starts the
@@ -41,30 +42,52 @@ service. With `--accounts` it waits for `VALIDATOR_KEY` to be added to `.env` in
 Everything is installed under `~/.sps-mini-validator`: configuration in `.env` (see Environment),
 seed, checkpoints and snapshots in `data/`, the chunk cache in `cache/`, and logs in `state/`.
 
-### Managing an install: `smv`
+### Managing an install: `spud`
 
-The installer also installs `smv` (`~/.sps-mini-validator/bin/smv`, linked from `~/.local/bin/smv`),
+The installer also installs `spud` (`~/.sps-mini-validator/bin/spud`, linked from `~/.local/bin/spud`),
 which works the same for Docker, systemd and launchd installs:
 
-| Command                          | Effect                                                                                                               |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `smv status`                     | Service state, release, accounts and the last processed block                                                        |
-| `smv logs [-f] [-n N]`           | Validator logs                                                                                                       |
-| `smv start` / `stop` / `restart` | Control the service                                                                                                  |
-| `smv accounts`                   | Configured accounts and how many posting keys are set (never the keys)                                               |
-| `smv add-account <name>`         | Asks for the posting key without echo, adds it, restarts, reports each account                                       |
-| `smv remove-account <name>`      | Removes the account and restarts                                                                                     |
-| `smv config`                     | Edits `.env`; restarts when it changed                                                                               |
-| `smv version`                    | Installed release and validator version                                                                              |
-| `smv update [--version vX.Y.Z]`  | Runs that release's `install.sh --update` (checksum-verified): keeps `.env` and data, rewrites the service and `smv` |
-| `smv update --check`             | Reports whether a newer release exists                                                                               |
-| `smv uninstall [--purge]`        | Removes the service and `smv`; `--purge` also deletes the install directory                                          |
+| Command                           | Effect                                                                                                                |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `spud status`                     | Service state, release, accounts and the last processed block                                                         |
+| `spud logs [-f] [-n N]`           | Validator logs                                                                                                        |
+| `spud start` / `stop` / `restart` | Control the service                                                                                                   |
+| `spud accounts`                   | Configured accounts and how many posting keys are set (never the keys)                                                |
+| `spud add <account>`              | Asks for the posting key without echo, adds it, restarts, reports each account                                        |
+| `spud remove <account>`           | Removes the account and restarts                                                                                      |
+| `spud snapshot`                   | Lists snapshots, their directory, the schedule and the next snapshot block                                            |
+| `spud snapshot now`               | Exports a snapshot from the newest checkpoint and verifies it reloads                                                 |
+| `spud config`                     | Edits `.env`; restarts when it changed                                                                                |
+| `spud version`                    | Installed release and validator version                                                                               |
+| `spud update [--version vX.Y.Z]`  | Runs that release's `install.sh --update` (checksum-verified): keeps `.env` and data, rewrites the service and `spud` |
+| `spud update --check`             | Reports whether a newer release exists                                                                                |
+| `spud update --auto`              | Updates to the latest release if it is newer, checks it and rolls back on failure (what the daily update runs)        |
+| `spud auto-update [on\|off]`      | Shows, turns on or turns off the daily update                                                                         |
+| `spud uninstall [--purge]`        | Removes the service and `spud`; `--purge` also deletes the install directory                                          |
+| `spud help`                       | Lists the commands                                                                                                    |
 
-The install settings (mode, release tag, image) are recorded in `install.conf`, which `smv` and
+The install settings (mode, release tag, image) are recorded in `install.conf`, which `spud` and
 `install.sh --update` read.
 
+### Automatic updates
+
+An install updates itself once a day, at a time picked at install so installs do not all update
+at once. The scheduler is a launchd agent on macOS, a systemd user timer on Linux, or cron
+otherwise. Each run (`spud update --auto`):
+
+1. Compares the installed tag with the latest release (drafts and pre-releases are never latest).
+2. Saves the current `install.conf`, `docker-compose.yml`, `spud` and npm tarball to `cache/rollback`.
+3. Runs the release's checksum-verified `install.sh --update`, which restarts the service.
+4. Waits up to `AUTO_UPDATE_CHECK_SECONDS` (default 600) for the restarted validator to process a
+   block past where it was. If it does not, or the installer fails, it restores the saved files,
+   restarts, and does not retry that release; the next release is tried as usual.
+
+A stopped service is updated without being started. Every run is logged to `state/update.log`, and
+`spud status` shows the last result. `AUTO_UPDATE=0` in `.env` (or `spud auto-update off`) turns it
+off. On Linux, `loginctl enable-linger` keeps user timers and services running without a login.
+
 Releases (`.github/workflows/release.yml`, on tag `v*`): multi-arch image on GHCR, npm tarball,
-`install.sh`, `smv`, seeds carried forward from the previous release. `scripts/publish-seed.sh <seed>
+`install.sh`, `spud`, seeds carried forward from the previous release. `scripts/publish-seed.sh <seed>
 [--genesis]` verifies a seed and replaces the release's seed assets and `SHA256SUMS`.
 
 ## How it works
@@ -154,6 +177,8 @@ instead of an upstream database or the genesis replay.
   64-bit hashes), `hive_account_authority` and `promise_closed_tables`. Rows keep each store's
   iteration order. Unlike checkpoints (`.v8.gz`, V8 serialization of this build's classes), seeds
   are independent of the Node version and of internal field layout.
+- An install writes snapshots to `~/.sps-mini-validator/data/snapshots` every 28800 blocks (about
+  a day, on multiples of `SNAPSHOT_EVERY`) and keeps the newest 3 (`SNAPSHOT_KEEP`).
 - With `SNAPSHOT_DIR` set, the runner writes `seed-<block>.ndjson.gz`, `seed-<block>.manifest.json`
   (`block_num`, `l2_block_id`, `bytes`, `sha256`, ...) and `latest.json`. With `REFERENCE_API` set,
   the block is verified first and nothing is exported on a mismatch.
