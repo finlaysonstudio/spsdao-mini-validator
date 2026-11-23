@@ -1,6 +1,6 @@
 #!/bin/sh
-# smv: manage an SPS Mini Validator installation. Written to <dir>/bin/smv by install.sh, which also
-# records the install settings in <dir>/install.conf; `smv update` re-runs the release's installer.
+# spud: manage an SPS Mini Validator installation. Written to <dir>/bin/spud by install.sh, which also
+# records the install settings in <dir>/install.conf; `spud update` re-runs the release's installer.
 set -eu
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
@@ -9,7 +9,7 @@ die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-usage: smv <command> [args]
+usage: spud <command> [args]
 
   status                       service state, accounts and the last processed block
   logs [-f] [-n N]             validator logs (-f follows)
@@ -21,7 +21,7 @@ usage: smv <command> [args]
   version                      installed release and validator version
   update [--version TAG]       reinstall from the latest (or given) release with its installer
   update --check               report whether a newer release exists
-  uninstall [--purge]          remove the service and smv; --purge also deletes the install directory
+  uninstall [--purge]          remove the service and spud; --purge also deletes the install directory
 EOF
 }
 
@@ -34,8 +34,8 @@ while [ -L "$self" ]; do
     *) self=$(dirname "$self")/$link ;;
   esac
 done
-DIR=${SMV_DIR:-$(cd "$(dirname "$self")/.." && pwd)}
-[ -f "$DIR/install.conf" ] || die "no install.conf in $DIR (set SMV_DIR to the install directory)"
+DIR=${SPUD_DIR:-$(cd "$(dirname "$self")/.." && pwd)}
+[ -f "$DIR/install.conf" ] || die "no install.conf in $DIR (set SPUD_DIR to the install directory)"
 # Written by install.sh: MODE SERVICE REPO TAG IMAGE RELEASE_BASE BIN LABEL PLIST UNIT
 . "$DIR/install.conf"
 ENV="$DIR/.env"
@@ -44,11 +44,11 @@ UID_=$(id -u)
 
 env_get() { sed -n "s/^$1=//p" "$ENV" | tail -n 1; }
 
-# env_set NAME: set NAME to $SMV_VALUE in .env (the value never appears on a command line).
+# env_set NAME: set NAME to $SPUD_VALUE in .env (the value never appears on a command line).
 env_set() {
   tmp="$ENV.tmp.$$"
   (umask 077 && awk -v k="$1" '
-    BEGIN { v = ENVIRON["SMV_VALUE"]; done = 0 }
+    BEGIN { v = ENVIRON["SPUD_VALUE"]; done = 0 }
     index($0, k "=") == 1 { if (!done) print k "=" v; done = 1; next }
     { print }
     END { if (!done) print k "=" v }
@@ -132,7 +132,7 @@ restart_and_report() {
     sleep 1
     i=$((i + 1))
   done
-  [ -z "$pending" ] || warn "no startup report yet for:$pending (smv logs)"
+  [ -z "$pending" ] || warn "no startup report yet for:$pending (spud logs)"
 }
 
 # ------------------------------------------------------------------ commands
@@ -158,7 +158,7 @@ cmd_logs() {
     case "$1" in
       -f) follow=1 ;;
       -n) n=$2; shift ;;
-      *) die "usage: smv logs [-f] [-n N]" ;;
+      *) die "usage: spud logs [-f] [-n N]" ;;
     esac
     shift
   done
@@ -190,7 +190,7 @@ read_secret() { # read_secret <prompt>: read a line from the terminal without ec
 }
 
 cmd_add_account() {
-  [ $# -eq 1 ] || die "usage: smv add-account <name>"
+  [ $# -eq 1 ] || die "usage: spud add-account <name>"
   name=$1
   valid_account "$name" || die "not a Hive account name: $name"
   accounts=$(env_get VALIDATOR_ACCOUNTS)
@@ -203,33 +203,33 @@ cmd_add_account() {
   if [ -n "$key" ]; then
     printf '%s' "$key" | grep -Eq '^5[1-9A-HJ-NP-Za-km-z]{50}$' || die "that is not a WIF private key (51 characters starting with 5)"
     if ! list_has "$keys" "$key"; then
-      SMV_VALUE="${keys:+$keys,}$key"
-      export SMV_VALUE
+      SPUD_VALUE="${keys:+$keys,}$key"
+      export SPUD_VALUE
       env_set VALIDATOR_KEY
-      unset SMV_VALUE
+      unset SPUD_VALUE
     fi
   elif [ -z "$keys" ]; then
     die "no posting key is configured yet; one is required"
   fi
   key=""
   keys=""
-  SMV_VALUE="${accounts:+$accounts,}$name"
-  export SMV_VALUE
+  SPUD_VALUE="${accounts:+$accounts,}$name"
+  export SPUD_VALUE
   env_set VALIDATOR_ACCOUNTS
-  unset SMV_VALUE
+  unset SPUD_VALUE
   say "Added $name"
   restart_and_report "$(env_get VALIDATOR_ACCOUNTS | tr ',' ' ')"
 }
 
 cmd_remove_account() {
-  [ $# -eq 1 ] || die "usage: smv remove-account <name>"
+  [ $# -eq 1 ] || die "usage: spud remove-account <name>"
   accounts=$(env_get VALIDATOR_ACCOUNTS)
   list_has "$accounts" "$1" || die "$1 is not configured"
-  SMV_VALUE=$(printf '%s\n' "$accounts" | tr ',' '\n' | grep -vx "$1" | paste -sd, -)
-  export SMV_VALUE
+  SPUD_VALUE=$(printf '%s\n' "$accounts" | tr ',' '\n' | grep -vx "$1" | paste -sd, -)
+  export SPUD_VALUE
   env_set VALIDATOR_ACCOUNTS
-  unset SMV_VALUE
-  say "Removed $1 (its key stays in .env; smv config to remove it)"
+  unset SPUD_VALUE
+  say "Removed $1 (its key stays in .env; spud config to remove it)"
   rest=$(env_get VALIDATOR_ACCOUNTS | tr ',' ' ')
   if [ -n "$rest" ]; then restart_and_report "$rest"; else quiet_restart && say "Restarted (no accounts: hashes only)"; fi
 }
@@ -266,14 +266,14 @@ cmd_update() {
     case "$1" in
       --version) version=$2; shift ;;
       --check) check=1 ;;
-      *) die "usage: smv update [--version TAG] [--check]" ;;
+      *) die "usage: spud update [--version TAG] [--check]" ;;
     esac
     shift
   done
   if [ -n "$check" ]; then
     latest=$(latest_tag)
     [ -n "$latest" ] || die "could not read the latest release of $REPO"
-    if [ "$latest" = "$TAG" ]; then say "Up to date ($TAG)"; else say "Update available: $TAG -> $latest (smv update)"; fi
+    if [ "$latest" = "$TAG" ]; then say "Up to date ($TAG)"; else say "Update available: $TAG -> $latest (spud update)"; fi
     return
   fi
   if [ -n "${RELEASE_BASE:-}" ]; then base=$RELEASE_BASE
@@ -296,8 +296,8 @@ cmd_update() {
 cmd_uninstall() {
   purge=""
   [ "${1:-}" = "--purge" ] && purge=1
-  if [ -n "$purge" ]; then prompt="Remove the service, smv and everything in $DIR (including data)? [y/N] "
-  else prompt="Remove the service and smv (keep $DIR)? [y/N] "; fi
+  if [ -n "$purge" ]; then prompt="Remove the service, spud and everything in $DIR (including data)? [y/N] "
+  else prompt="Remove the service and spud (keep $DIR)? [y/N] "; fi
   printf '%s' "$prompt"
   read -r answer < /dev/tty || answer=""
   case "$answer" in y | Y | yes) ;; *) say "Nothing removed"; return ;; esac
@@ -307,15 +307,15 @@ cmd_uninstall() {
     launchd) launchctl bootout "gui/$UID_/$LABEL" 2>/dev/null || true; rm -f "$PLIST" ;;
   esac
   [ "$MODE" = native ] && { npm uninstall --global @spsdao/mini-validator >/dev/null 2>&1 || true; }
-  link="$HOME/.local/bin/smv"
-  if [ -L "$link" ] && [ "$(readlink "$link")" = "$DIR/bin/smv" ]; then rm -f "$link"; fi
+  link="$HOME/.local/bin/spud"
+  if [ -L "$link" ] && [ "$(readlink "$link")" = "$DIR/bin/spud" ]; then rm -f "$link"; fi
   if [ -n "$purge" ]; then
     case "$DIR" in "" | / | "$HOME") die "refusing to delete $DIR" ;; esac
     rm -rf "$DIR"
     say "Removed $DIR"
   else
-    rm -f "$DIR/bin/smv"
-    say "Removed the service and smv; $DIR is kept"
+    rm -f "$DIR/bin/spud"
+    say "Removed the service and spud; $DIR is kept"
   fi
 }
 

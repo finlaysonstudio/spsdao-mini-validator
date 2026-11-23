@@ -14,11 +14,11 @@
 #   --dir DIR           install directory (default ~/.sps-mini-validator)
 #   --version TAG       release tag (default: latest)
 #   --no-start          write files without starting
-#   --update            update an existing install in <dir> (used by `smv update`): keeps .env and
-#                       data, reuses the recorded mode, skips the seed, rewrites the service and smv
+#   --update            update an existing install in <dir> (used by `spud update`): keeps .env and
+#                       data, reuses the recorded mode, skips the seed, rewrites the service and spud
 #
 # Layout under <dir>:
-#   .env, install.conf, docker-compose.yml, run.sh, bin/smv (also linked from ~/.local/bin/smv)
+#   .env, install.conf, docker-compose.yml, run.sh, bin/spud (also linked from ~/.local/bin/spud)
 #   data/    seed, checkpoints, snapshots
 #   cache/   block chunk cache, downloads
 #   state/   hashes.log, duties.log, service log
@@ -118,18 +118,18 @@ else
   say "Updating ${CONFIG_DIR} to ${TAG}"
 fi
 
-# ---------------------------------------------------------------- smv
+# ---------------------------------------------------------------- spud
 q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
-install_smv() { # install_smv <mode> <service>: bin/smv, install.conf and ~/.local/bin/smv
+install_spud() { # install_spud <mode> <service>: bin/spud, install.conf and ~/.local/bin/spud
   mkdir -p "$CONFIG_DIR/bin"
-  fetch smv "$CONFIG_DIR/bin/smv.new"
-  verify smv "$CONFIG_DIR/bin/smv.new"
-  chmod 755 "$CONFIG_DIR/bin/smv.new"
-  # A rename, so a running smv keeps reading the file it started with.
-  mv "$CONFIG_DIR/bin/smv.new" "$CONFIG_DIR/bin/smv"
+  fetch spud "$CONFIG_DIR/bin/spud.new"
+  verify spud "$CONFIG_DIR/bin/spud.new"
+  chmod 755 "$CONFIG_DIR/bin/spud.new"
+  # A rename, so a running spud keeps reading the file it started with.
+  mv "$CONFIG_DIR/bin/spud.new" "$CONFIG_DIR/bin/spud"
   {
-    echo "# Written by install.sh; read by smv and by install.sh --update."
+    echo "# Written by install.sh; read by spud and by install.sh --update."
     echo "MODE=$(q "$1")"
     echo "SERVICE=$(q "$2")"
     echo "REPO=$(q "$REPO")"
@@ -144,15 +144,20 @@ install_smv() { # install_smv <mode> <service>: bin/smv, install.conf and ~/.loc
   } > "$CONFIG_DIR/install.conf.new"
   mv "$CONFIG_DIR/install.conf.new" "$CONFIG_DIR/install.conf"
   mkdir -p "$HOME/.local/bin"
-  ln -sf "$CONFIG_DIR/bin/smv" "$HOME/.local/bin/smv"
+  ln -sf "$CONFIG_DIR/bin/spud" "$HOME/.local/bin/spud"
+  # v0.2.0 installed this command as smv.
+  if [ -L "$HOME/.local/bin/smv" ] && [ "$(readlink "$HOME/.local/bin/smv")" = "$CONFIG_DIR/bin/smv" ]; then
+    rm -f "$HOME/.local/bin/smv"
+  fi
+  rm -f "$CONFIG_DIR/bin/smv"
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) ;;
-    *) say "Add ~/.local/bin to PATH to run smv (or run ${CONFIG_DIR}/bin/smv)" ;;
+    *) say "Add ~/.local/bin to PATH to run spud (or run ${CONFIG_DIR}/bin/spud)" ;;
   esac
 }
 
 done_message() {
-  say "Manage it with smv: smv status, smv logs -f, smv add-account <name>, smv update"
+  say "Manage it with spud: spud status, spud logs -f, spud add-account <name>, spud update"
 }
 
 # ---------------------------------------------------------------- config
@@ -213,7 +218,7 @@ EOF
   # The image runs as uid 1000 (node).
   chmod -R a+rwX "$DATA_DIR" "$CACHE_DIR" "$STATE_DIR" 2>/dev/null || true
   say "Wrote ${CONFIG_DIR}/docker-compose.yml"
-  install_smv docker docker
+  install_spud docker docker
   if [ "$START" = 1 ]; then
     docker compose pull --ignore-pull-failures
     docker compose up -d
@@ -262,7 +267,7 @@ RestartSec=10
 [Install]
 WantedBy=default.target
 EOF
-    install_smv native systemd
+    install_spud native systemd
     systemctl --user daemon-reload
     if [ "$START" = 1 ]; then
       systemctl --user enable sps-mini-validator
@@ -288,7 +293,7 @@ EOF
 </dict>
 </plist>
 EOF
-    install_smv native launchd
+    install_spud native launchd
     if [ "$START" = 1 ]; then
       launchctl bootout "gui/$(id -u)/net.spsdao.mini-validator" 2>/dev/null || true
       launchctl bootstrap "gui/$(id -u)" "$PLIST"
@@ -296,7 +301,7 @@ EOF
     fi
     ;;
   *)
-    install_smv native none
+    install_spud native none
     say "No service manager support for $(uname -s); run ${CONFIG_DIR}/run.sh"
     ;;
 esac

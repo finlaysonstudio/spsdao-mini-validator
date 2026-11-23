@@ -41,30 +41,30 @@ service. With `--accounts` it waits for `VALIDATOR_KEY` to be added to `.env` in
 Everything is installed under `~/.sps-mini-validator`: configuration in `.env` (see Environment),
 seed, checkpoints and snapshots in `data/`, the chunk cache in `cache/`, and logs in `state/`.
 
-### Managing an install: `smv`
+### Managing an install: `spud`
 
-The installer also installs `smv` (`~/.sps-mini-validator/bin/smv`, linked from `~/.local/bin/smv`),
+The installer also installs `spud` (`~/.sps-mini-validator/bin/spud`, linked from `~/.local/bin/spud`),
 which works the same for Docker, systemd and launchd installs:
 
-| Command                          | Effect                                                                                                               |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `smv status`                     | Service state, release, accounts and the last processed block                                                        |
-| `smv logs [-f] [-n N]`           | Validator logs                                                                                                       |
-| `smv start` / `stop` / `restart` | Control the service                                                                                                  |
-| `smv accounts`                   | Configured accounts and how many posting keys are set (never the keys)                                               |
-| `smv add-account <name>`         | Asks for the posting key without echo, adds it, restarts, reports each account                                       |
-| `smv remove-account <name>`      | Removes the account and restarts                                                                                     |
-| `smv config`                     | Edits `.env`; restarts when it changed                                                                               |
-| `smv version`                    | Installed release and validator version                                                                              |
-| `smv update [--version vX.Y.Z]`  | Runs that release's `install.sh --update` (checksum-verified): keeps `.env` and data, rewrites the service and `smv` |
-| `smv update --check`             | Reports whether a newer release exists                                                                               |
-| `smv uninstall [--purge]`        | Removes the service and `smv`; `--purge` also deletes the install directory                                          |
+| Command                           | Effect                                                                                                                |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `spud status`                     | Service state, release, accounts and the last processed block                                                         |
+| `spud logs [-f] [-n N]`           | Validator logs                                                                                                        |
+| `spud start` / `stop` / `restart` | Control the service                                                                                                   |
+| `spud accounts`                   | Configured accounts and how many posting keys are set (never the keys)                                                |
+| `spud add-account <name>`         | Asks for the posting key without echo, adds it, restarts, reports each account                                        |
+| `spud remove-account <name>`      | Removes the account and restarts                                                                                      |
+| `spud config`                     | Edits `.env`; restarts when it changed                                                                                |
+| `spud version`                    | Installed release and validator version                                                                               |
+| `spud update [--version vX.Y.Z]`  | Runs that release's `install.sh --update` (checksum-verified): keeps `.env` and data, rewrites the service and `spud` |
+| `spud update --check`             | Reports whether a newer release exists                                                                                |
+| `spud uninstall [--purge]`        | Removes the service and `spud`; `--purge` also deletes the install directory                                          |
 
-The install settings (mode, release tag, image) are recorded in `install.conf`, which `smv` and
+The install settings (mode, release tag, image) are recorded in `install.conf`, which `spud` and
 `install.sh --update` read.
 
 Releases (`.github/workflows/release.yml`, on tag `v*`): multi-arch image on GHCR, npm tarball,
-`install.sh`, `smv`, seeds carried forward from the previous release. `scripts/publish-seed.sh <seed>
+`install.sh`, `spud`, seeds carried forward from the previous release. `scripts/publish-seed.sh <seed>
 [--genesis]` verifies a seed and replaces the release's seed assets and `SHA256SUMS`.
 
 ## How it works
