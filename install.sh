@@ -2,17 +2,26 @@
 # SPS Mini Validator installer.
 #
 #   curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validator/main/install.sh | sh
-#   curl -fsSL .../install.sh | sh -s -- --bare-metal --accounts alice,bob
+#   curl -fsSL .../install.sh | sh -s -- --native-install --accounts alice,bob
 #
 # Options:
 #   --docker            run in Docker (default; image ghcr.io/finlaysonstudio/spsdao-mini-validator)
-#   --bare-metal        install the sps-mini CLI with npm (Node 24+) and a systemd/launchd service
+#   --native-install    install the sps-mini-validator CLI with npm (Node 24+) and a systemd/launchd service
 #   --genesis           start from the genesis seed (block 93703455) and replay to head (hours, ~6 GB
 #                       chunk cache) instead of the latest published seed
-#   --accounts a,b      validator accounts for shadow-mode duties (no keys are read)
-#   --dir DIR           install directory (default ~/.sps-mini)
+#   --accounts a,b      validator accounts to perform duties for; add their posting key(s) as
+#                       VALIDATOR_KEY in <dir>/.env before starting
+#   --dir DIR           install directory (default ~/.sps-mini-validator)
 #   --version TAG       release tag (default: latest)
 #   --no-start          write files without starting
+#   --update            update an existing install in <dir> (used by `smv update`): keeps .env and
+#                       data, reuses the recorded mode, skips the seed, rewrites the service and smv
+#
+# Layout under <dir>:
+#   .env, install.conf, docker-compose.yml, run.sh, bin/smv (also linked from ~/.local/bin/smv)
+#   data/    seed, checkpoints, snapshots
+#   cache/   block chunk cache, downloads
+#   state/   hashes.log, duties.log, service log
 set -eu
 
 REPO="finlaysonstudio/spsdao-mini-validator"
@@ -20,20 +29,22 @@ IMAGE="${SPS_MINI_IMAGE:-ghcr.io/finlaysonstudio/spsdao-mini-validator}"
 MODE="docker"
 SEED="latest"
 ACCOUNTS=""
-DIR="${HOME}/.sps-mini"
+DIR="${HOME}/.sps-mini-validator"
 VERSION="latest"
 START=1
+UPDATE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --docker) MODE="docker" ;;
-    --bare-metal) MODE="bare-metal" ;;
+    --native-install) MODE="native" ;;
     --genesis) SEED="genesis" ;;
     --accounts) ACCOUNTS="$2"; shift ;;
     --dir) DIR="$2"; shift ;;
     --version) VERSION="$2"; shift ;;
     --no-start) START=0 ;;
-    -h|--help) sed -n '2,17p' "$0" 2>/dev/null || true; exit 0 ;;
+    --update) UPDATE=1 ;;
+    -h|--help) sed -n '2,24p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -43,16 +54,37 @@ say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
 
+CONFIG_DIR="$DIR"
+DATA_DIR="$DIR/data"
+CACHE_DIR="$DIR/cache"
+STATE_DIR="$DIR/state"
+
+conf_get() { sed -n "s/^$1='\(.*\)'\$/\1/p" "$DIR/install.conf"; }
+
 need curl
-if [ "$VERSION" = "latest" ]; then
-  BASE="https://github.com/${REPO}/releases/latest/download"
-  TAG="latest"
-else
-  BASE="https://github.com/${REPO}/releases/download/${VERSION}"
-  TAG="${VERSION}"
+if [ "$UPDATE" = 1 ]; then
+  [ -f "$DIR/install.conf" ] || die "no install in $DIR to update (install.conf is missing)"
+  # Reuse the recorded mode, seed and mirror.
+  MODE=$(conf_get MODE)
+  SEED_ASSET=$(conf_get SEED_ASSET)
+  RECORDED_BASE=$(conf_get RELEASE_BASE)
+  [ -z "${SPS_MINI_RELEASE_BASE:-}" ] && [ -n "$RECORDED_BASE" ] && SPS_MINI_RELEASE_BASE=$RECORDED_BASE
+  [ -n "$MODE" ] || die "install.conf does not record the install mode"
 fi
 # Mirror of the release assets (testing, air-gapped installs).
-[ -n "${SPS_MINI_RELEASE_BASE:-}" ] && BASE="$SPS_MINI_RELEASE_BASE"
+RELEASE_BASE="${SPS_MINI_RELEASE_BASE:-}"
+if [ "$VERSION" != "latest" ]; then
+  TAG="$VERSION"
+elif [ -z "$RELEASE_BASE" ]; then
+  # Pin "latest" to its tag so every asset and the image come from the same release.
+  TAG=$(curl -fsSI -o /dev/null -w '%{redirect_url}' "https://github.com/${REPO}/releases/latest" 2>/dev/null | sed -n 's#.*/releases/tag/##p')
+  [ -n "$TAG" ] || TAG="latest"
+else
+  TAG="latest"
+fi
+if [ -n "$RELEASE_BASE" ]; then BASE="$RELEASE_BASE"
+elif [ "$TAG" = "latest" ]; then BASE="https://github.com/${REPO}/releases/latest/download"
+else BASE="https://github.com/${REPO}/releases/download/${TAG}"; fi
 
 sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
@@ -64,60 +96,113 @@ fetch() { # fetch <asset> <dest>
   mv "$2.part" "$2"
 }
 
-mkdir -p "$DIR/data"
-cd "$DIR"
+mkdir -p "$CONFIG_DIR" "$DATA_DIR" "$CACHE_DIR" "$STATE_DIR"
+cd "$CONFIG_DIR"
+
+verify() { # verify <asset> <file>: check a downloaded asset against SHA256SUMS
+  EXPECTED=$(grep " $1\$" "$DATA_DIR/SHA256SUMS" | cut -d' ' -f1)
+  [ -n "$EXPECTED" ] || die "$1 is not listed in SHA256SUMS"
+  [ "$(sha256 "$2")" = "$EXPECTED" ] || die "checksum mismatch for $1"
+}
+
+fetch SHA256SUMS "$DATA_DIR/SHA256SUMS"
 
 # ---------------------------------------------------------------- seed
-if [ "$SEED" = "genesis" ]; then SEED_ASSET="seed-genesis.ndjson.gz"; else SEED_ASSET="seed-latest.ndjson.gz"; fi
-say "Downloading ${SEED_ASSET} (${VERSION})"
-fetch SHA256SUMS data/SHA256SUMS
-fetch "$SEED_ASSET" "data/$SEED_ASSET"
-EXPECTED=$(grep " ${SEED_ASSET}\$" data/SHA256SUMS | cut -d' ' -f1)
-[ -n "$EXPECTED" ] || die "${SEED_ASSET} is not listed in SHA256SUMS"
-[ "$(sha256 "data/$SEED_ASSET")" = "$EXPECTED" ] || die "checksum mismatch for ${SEED_ASSET}"
-say "Checksum ok"
+if [ "$UPDATE" = 0 ]; then
+  if [ "$SEED" = "genesis" ]; then SEED_ASSET="seed-genesis.ndjson.gz"; else SEED_ASSET="seed-latest.ndjson.gz"; fi
+  say "Downloading ${SEED_ASSET} (${TAG})"
+  fetch "$SEED_ASSET" "$DATA_DIR/$SEED_ASSET"
+  verify "$SEED_ASSET" "$DATA_DIR/$SEED_ASSET"
+  say "Checksum ok"
+else
+  say "Updating ${CONFIG_DIR} to ${TAG}"
+fi
+
+# ---------------------------------------------------------------- smv
+q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+install_smv() { # install_smv <mode> <service>: bin/smv, install.conf and ~/.local/bin/smv
+  mkdir -p "$CONFIG_DIR/bin"
+  fetch smv "$CONFIG_DIR/bin/smv.new"
+  verify smv "$CONFIG_DIR/bin/smv.new"
+  chmod 755 "$CONFIG_DIR/bin/smv.new"
+  # A rename, so a running smv keeps reading the file it started with.
+  mv "$CONFIG_DIR/bin/smv.new" "$CONFIG_DIR/bin/smv"
+  {
+    echo "# Written by install.sh; read by smv and by install.sh --update."
+    echo "MODE=$(q "$1")"
+    echo "SERVICE=$(q "$2")"
+    echo "REPO=$(q "$REPO")"
+    echo "TAG=$(q "$TAG")"
+    echo "IMAGE=$(q "$IMAGE")"
+    echo "SEED_ASSET=$(q "$SEED_ASSET")"
+    echo "RELEASE_BASE=$(q "$RELEASE_BASE")"
+    echo "BIN=$(q "${BIN:-}")"
+    echo "UNIT=$(q "sps-mini-validator")"
+    echo "LABEL=$(q "net.spsdao.mini-validator")"
+    echo "PLIST=$(q "${PLIST:-}")"
+  } > "$CONFIG_DIR/install.conf.new"
+  mv "$CONFIG_DIR/install.conf.new" "$CONFIG_DIR/install.conf"
+  mkdir -p "$HOME/.local/bin"
+  ln -sf "$CONFIG_DIR/bin/smv" "$HOME/.local/bin/smv"
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) say "Add ~/.local/bin to PATH to run smv (or run ${CONFIG_DIR}/bin/smv)" ;;
+  esac
+}
+
+done_message() {
+  say "Manage it with smv: smv status, smv logs -f, smv add-account <name>, smv update"
+}
 
 # ---------------------------------------------------------------- config
 if [ ! -f .env ]; then
   cat > .env <<EOF
 # SPS Mini Validator configuration (see the README "Environment" table).
-SEED_FILE=${DIR}/data/${SEED_ASSET}
-CHECKPOINT_DIR=${DIR}/data/checkpoints
+SEED_FILE=${DATA_DIR}/${SEED_ASSET}
+CHECKPOINT_DIR=${DATA_DIR}/checkpoints
 CHECKPOINT_EVERY=1000
-CHUNK_CACHE_DIR=${DIR}/data/chunks
-HASH_LOG=${DIR}/data/hashes.log
-SNAPSHOT_DIR=${DIR}/data/snapshots
+CHUNK_CACHE_DIR=${CACHE_DIR}/chunks
+HASH_LOG=${STATE_DIR}/hashes.log
+SNAPSHOT_DIR=${DATA_DIR}/snapshots
 VALIDATOR_ACCOUNTS=${ACCOUNTS}
-VALIDATOR_MODE=shadow
-DUTY_LOG=${DIR}/data/duties.log
+# Posting key WIF(s), comma-separated, for VALIDATOR_ACCOUNTS (required when it is set).
+VALIDATOR_KEY=
+DUTY_LOG=${STATE_DIR}/duties.log
 EOF
   chmod 600 .env
-  say "Wrote ${DIR}/.env"
+  say "Wrote ${CONFIG_DIR}/.env"
 else
-  say "Keeping existing ${DIR}/.env"
+  say "Keeping existing ${CONFIG_DIR}/.env"
+fi
+if grep -q '^VALIDATOR_ACCOUNTS=.' .env && ! grep -q '^VALIDATOR_KEY=.' .env; then
+  say "Add VALIDATOR_KEY to ${CONFIG_DIR}/.env, then start the validator"
+  START=0
 fi
 
 # ---------------------------------------------------------------- docker
 if [ "$MODE" = "docker" ]; then
   need docker
   docker compose version >/dev/null 2>&1 || die "docker compose v2 is required"
-  # Paths inside the container are /data; the .env above is for bare metal, so map it here.
+  # Paths inside the container are /data, /cache and /state; the .env above is for a native install, so map it here.
   cat > docker-compose.yml <<EOF
 services:
   validator:
     image: ${IMAGE}:${TAG}
-    container_name: sps-mini
+    container_name: sps-mini-validator
     restart: unless-stopped
     env_file: .env
     environment:
       SEED_FILE: /data/${SEED_ASSET}
       CHECKPOINT_DIR: /data/checkpoints
-      CHUNK_CACHE_DIR: /data/chunks
-      HASH_LOG: /data/hashes.log
+      CHUNK_CACHE_DIR: /cache/chunks
+      HASH_LOG: /state/hashes.log
       SNAPSHOT_DIR: /data/snapshots
-      DUTY_LOG: /data/duties.log
+      DUTY_LOG: /state/duties.log
     volumes:
-      - ./data:/data
+      - ${DATA_DIR}:/data
+      - ${CACHE_DIR}:/cache
+      - ${STATE_DIR}:/state
     mem_limit: 4g
     logging:
       driver: json-file
@@ -126,32 +211,35 @@ services:
         max-file: "5"
 EOF
   # The image runs as uid 1000 (node).
-  chmod -R a+rwX data 2>/dev/null || true
-  say "Wrote ${DIR}/docker-compose.yml"
+  chmod -R a+rwX "$DATA_DIR" "$CACHE_DIR" "$STATE_DIR" 2>/dev/null || true
+  say "Wrote ${CONFIG_DIR}/docker-compose.yml"
+  install_smv docker docker
   if [ "$START" = 1 ]; then
     docker compose pull --ignore-pull-failures
     docker compose up -d
-    say "Started. Logs: cd ${DIR} && docker compose logs -f"
+    say "Started"
   fi
+  done_message
   exit 0
 fi
 
-# ---------------------------------------------------------------- bare metal
+# ---------------------------------------------------------------- native install
 need node
 need npm
 NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
 [ "$NODE_MAJOR" -ge 24 ] || die "Node 24 or newer is required (found $(node -v))"
-say "Installing sps-mini (${VERSION}) with npm"
-fetch "spsdao-mini-validator.tgz" "data/spsdao-mini-validator.tgz"
-npm install --global "${DIR}/data/spsdao-mini-validator.tgz"
-BIN=$(command -v sps-mini) || die "sps-mini not on PATH after npm install"
-sps-mini version
+say "Installing sps-mini-validator (${TAG}) with npm"
+fetch "spsdao-mini-validator.tgz" "$CACHE_DIR/spsdao-mini-validator.tgz"
+verify "spsdao-mini-validator.tgz" "$CACHE_DIR/spsdao-mini-validator.tgz"
+npm install --global "$CACHE_DIR/spsdao-mini-validator.tgz"
+BIN=$(command -v sps-mini-validator) || die "sps-mini-validator not on PATH after npm install"
+sps-mini-validator version
 
 cat > run.sh <<EOF
 #!/bin/sh
-# Loads ${DIR}/.env and runs the validator (used by the service unit).
+# Loads ${CONFIG_DIR}/.env and runs the validator (used by the service unit).
 set -a
-. "${DIR}/.env"
+. "${CONFIG_DIR}/.env"
 set +a
 exec "${BIN}" run
 EOF
@@ -161,23 +249,25 @@ case "$(uname -s)" in
   Linux)
     need systemctl
     mkdir -p "${HOME}/.config/systemd/user"
-    cat > "${HOME}/.config/systemd/user/sps-mini.service" <<EOF
+    cat > "${HOME}/.config/systemd/user/sps-mini-validator.service" <<EOF
 [Unit]
 Description=SPS Mini Validator
 After=network-online.target
 
 [Service]
-ExecStart=${DIR}/run.sh
+ExecStart=${CONFIG_DIR}/run.sh
 Restart=on-failure
 RestartSec=10
 
 [Install]
 WantedBy=default.target
 EOF
+    install_smv native systemd
+    systemctl --user daemon-reload
     if [ "$START" = 1 ]; then
-      systemctl --user daemon-reload
-      systemctl --user enable --now sps-mini
-      say "Started. Logs: journalctl --user -u sps-mini -f (enable lingering to run without a login: loginctl enable-linger)"
+      systemctl --user enable sps-mini-validator
+      systemctl --user restart sps-mini-validator
+      say "Started (to keep it running without a login: loginctl enable-linger)"
     fi
     ;;
   Darwin)
@@ -189,22 +279,25 @@ EOF
 <plist version="1.0">
 <dict>
   <key>Label</key><string>net.spsdao.mini-validator</string>
-  <key>ProgramArguments</key><array><string>${DIR}/run.sh</string></array>
+  <key>ProgramArguments</key><array><string>${CONFIG_DIR}/run.sh</string></array>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(dirname "$(command -v node)"):/usr/bin:/bin</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>${DIR}/data/sps-mini.log</string>
-  <key>StandardErrorPath</key><string>${DIR}/data/sps-mini.log</string>
+  <key>StandardOutPath</key><string>${STATE_DIR}/sps-mini-validator.log</string>
+  <key>StandardErrorPath</key><string>${STATE_DIR}/sps-mini-validator.log</string>
 </dict>
 </plist>
 EOF
+    install_smv native launchd
     if [ "$START" = 1 ]; then
-      launchctl unload "$PLIST" 2>/dev/null || true
-      launchctl load "$PLIST"
-      say "Started. Logs: tail -f ${DIR}/data/sps-mini.log"
+      launchctl bootout "gui/$(id -u)/net.spsdao.mini-validator" 2>/dev/null || true
+      launchctl bootstrap "gui/$(id -u)" "$PLIST"
+      say "Started"
     fi
     ;;
   *)
-    say "No service manager support for $(uname -s); run ${DIR}/run.sh"
+    install_smv native none
+    say "No service manager support for $(uname -s); run ${CONFIG_DIR}/run.sh"
     ;;
 esac
+done_message

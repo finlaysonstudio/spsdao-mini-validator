@@ -4,13 +4,12 @@
  * Ports upstream's block-validation submission (validator/src/processor.ts) and
  * ValidatorCheckInPlugin (features/validator/license-plugin.ts), with Fire Horse's
  * leader/follower delay and deterministic check-in jitter, generalised to several
- * accounts. Every send goes through a Broadcaster; the shadow broadcaster only logs, the
- * live one (broadcast.mts) signs and sends.
+ * accounts. Every send goes through a Broadcaster (broadcast.mts signs and sends).
  *
  * It also watches the chain for validate_block / check_in_validator transactions
  * signed by the configured accounts (sent by another node, e.g. the upstream
  * validator) and reports whether they agree with this node's state and with what
- * it intended to send. That comparison is the evidence shadow mode exists for.
+ * it intended to send.
  */
 import { sha256 } from "js-sha256";
 import type { Services } from "../services.mjs";
@@ -27,7 +26,6 @@ export type BroadcastRequest = {
 } & ({ action: DutyAction; params: { block_num: number; hash: string; version: string } } | { action: "price_feed"; params: { updates: PriceUpdate[]; metadata?: unknown } });
 
 export interface Broadcaster {
-  readonly mode: "shadow" | "live";
   send(request: BroadcastRequest): void;
 }
 
@@ -246,24 +244,6 @@ export class ValidatorDuties {
         });
       }
     }
-  }
-}
-
-/** Shadow mode: build and log every transaction, sign and send nothing. */
-export class ShadowBroadcaster implements Broadcaster {
-  readonly mode = "shadow" as const;
-  private readonly emit: (event: DutyEvent) => void;
-  private readonly customJsonId: string;
-  constructor({ emit, customJsonId = "sm_sps" }: { emit: (event: DutyEvent) => void; customJsonId?: string }) {
-    this.emit = emit;
-    this.customJsonId = customJsonId;
-  }
-  send(request: BroadcastRequest): void {
-    this.emit({
-      status: "info",
-      msg: "shadow broadcast",
-      fields: { action: request.action, account: request.account, ...request.params, ...request.context, custom_json: customJson({ id: this.customJsonId, request }) },
-    });
   }
 }
 

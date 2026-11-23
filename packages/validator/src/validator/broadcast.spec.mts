@@ -100,13 +100,12 @@ describe("LiveBroadcaster", () => {
 });
 
 describe("LiveBroadcaster without a signer for the account", () => {
-  it("hands the request to the fallback with reason no_key and sends nothing", async () => {
-    const fallback: BroadcastRequest[] = [];
-    const b = new LiveBroadcaster({ emit, signers: [{ account: "someone-else", key, via: "key" }], fallback: { mode: "shadow", send: (r) => void fallback.push(r) }, chain });
+  it("reports the request as failed and sends nothing", async () => {
+    const b = new LiveBroadcaster({ emit, signers: [{ account: "someone-else", key, via: "key" }], chain });
     b.send(request);
     await b.flush();
     expect(chain.sent).toEqual([]);
-    expect(fallback).toEqual([{ ...request, context: { ...request.context, reason: "no_key" } }]);
+    expect(events).toEqual([{ status: "error", msg: "broadcast failed", fields: expect.objectContaining({ account: "nullfame", stage: "prepare", error: "no key for account" }) }]);
   });
 });
 

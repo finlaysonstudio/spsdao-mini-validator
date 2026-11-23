@@ -1,43 +1,70 @@
-# SPS Mini Validator
+# SPS DAO Mini Validator - _Spud_
 
-A minimal, in-memory port of the [TheSPSDAO/SPS-Validator](https://github.com/TheSPSDAO/SPS-Validator)
-block-processing core. It replays Hive blocks, applies every SPS layer-2 action and virtual
-operation exactly as the upstream validator does, and computes the same L2 block hash, with
-no database and no web UI. It can perform a validator's duties (block validation, check-ins) in
-shadow mode or live. It exports portable snapshots that other nodes start from.
+A minimal SPS validator, small enough to run on a potato. _Spud_ implements the consensus algorithm, check-ins, and top validator price feeds 100x faster with 100x less disk space.
 
-Target: hash-for-hash parity with upstream **1.5.1** (verified continuously against a running
-upstream node's Postgres with `tools/dbdiff.mts`).
+_Spud_ solves two pain points with the reference validator, [TheSPSDAO/SPS-Validator](https://github.com/TheSPSDAO/SPS-Validator):
 
-## Install
+1. The installation process requires a lot of disk space
+2. Catching up to head takes a long time
 
-Docker (recommended; Node 24 image for linux/amd64 and linux/arm64):
+The mini validator does not include a web interface, a block explorer, or the database needed to power them. These features provide value but are not required to validate blocks. Eliminating them means everything else is faster and smaller.
+
+## 💿 Installation
+
+### Docker
+
+Using Docker is still the default and recommended way to run a validator:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validator/main/install.sh | sh
 ```
 
-Bare metal (Node 24+; installs the `sps-mini` CLI with npm and a systemd user unit or launchd agent):
+### Native Install
+
+Requires Node 24+. Installs `sps-mini-validator` CLI with NPM and a systemd user unit or launchd agent.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validator/main/install.sh | sh -s -- --bare-metal
+curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validator/main/install.sh | sh -s -- --native-install
 ```
 
-| Option | Effect |
-|---|---|
-| `--accounts a,b` | Shadow-mode duties for these validator accounts (no keys are read; live mode is set in the env file) |
-| `--genesis` | Start from the genesis seed (block 93703455) and replay to head: trustless, hours, ~6 GB chunk cache |
-| `--dir DIR` | Install directory (default `~/.sps-mini`) |
-| `--version vX.Y.Z` | Release tag (default latest) |
-| `--no-start` | Write files only |
+| Option             | Effect                                                                                  |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| `--accounts a,b`   | Validator accounts to perform duties for; set `VALIDATOR_KEY` in `.env` before starting |
+| `--genesis`        | Start from the genesis seed (block 93703455) and replay to head                         |
+| `--dir DIR`        | Install directory (default `~/.sps-mini-validator`)                                     |
+| `--version vX.Y.Z` | Release tag (default latest)                                                            |
+| `--no-start`       | Write files only                                                                        |
 
 The installer downloads `seed-latest.ndjson.gz` (or `seed-genesis.ndjson.gz`) from the GitHub
 release, checks it against the release's `SHA256SUMS`, writes `.env` (mode 600) and starts the
-service. `sps-mini verify <seed>` also checks a seed's hash against the Splinterlands archive API.
-Configuration lives in `<dir>/.env` (see Environment).
+service. With `--accounts` it waits for `VALIDATOR_KEY` to be added to `.env` instead of starting. `sps-mini-validator verify <seed>` also checks a seed's hash against the Splinterlands archive API.
+Everything is installed under `~/.sps-mini-validator`: configuration in `.env` (see Environment),
+seed, checkpoints and snapshots in `data/`, the chunk cache in `cache/`, and logs in `state/`.
+
+### Managing an install: `smv`
+
+The installer also installs `smv` (`~/.sps-mini-validator/bin/smv`, linked from `~/.local/bin/smv`),
+which works the same for Docker, systemd and launchd installs:
+
+| Command                          | Effect                                                                                                               |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `smv status`                     | Service state, release, accounts and the last processed block                                                        |
+| `smv logs [-f] [-n N]`           | Validator logs                                                                                                       |
+| `smv start` / `stop` / `restart` | Control the service                                                                                                  |
+| `smv accounts`                   | Configured accounts and how many posting keys are set (never the keys)                                               |
+| `smv add-account <name>`         | Asks for the posting key without echo, adds it, restarts, reports each account                                       |
+| `smv remove-account <name>`      | Removes the account and restarts                                                                                     |
+| `smv config`                     | Edits `.env`; restarts when it changed                                                                               |
+| `smv version`                    | Installed release and validator version                                                                              |
+| `smv update [--version vX.Y.Z]`  | Runs that release's `install.sh --update` (checksum-verified): keeps `.env` and data, rewrites the service and `smv` |
+| `smv update --check`             | Reports whether a newer release exists                                                                               |
+| `smv uninstall [--purge]`        | Removes the service and `smv`; `--purge` also deletes the install directory                                          |
+
+The install settings (mode, release tag, image) are recorded in `install.conf`, which `smv` and
+`install.sh --update` read.
 
 Releases (`.github/workflows/release.yml`, on tag `v*`): multi-arch image on GHCR, npm tarball,
-`install.sh`, seeds carried forward from the previous release. `scripts/publish-seed.sh <seed>
+`install.sh`, `smv`, seeds carried forward from the previous release. `scripts/publish-seed.sh <seed>
 [--genesis]` verifies a seed and replaces the release's seed assets and `SHA256SUMS`.
 
 ## How it works
@@ -79,7 +106,7 @@ gzip -k var/seed.ndjson
 SEED_FILE=var/seed.ndjson.gz HASH_LOG=var/hashes.log npm run dev --workspace packages/validator
 ```
 
-Container (shadow mode by default; keys only in live mode):
+Container (posting key in `var/validator.env`, from `scripts/make-validator-env.sh`):
 
 ```sh
 mkdir -p var/validator && cp var/seed.ndjson.gz var/validator/
@@ -102,20 +129,20 @@ the database.
 
 ## Environment
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `SEED_FILE` | `seed.ndjson` | NDJSON (or `.gz`) seed |
-| `RPC_NODES` | 5 public nodes | Comma-separated Hive RPC endpoints |
-| `BLOCKS_BEHIND_HEAD` | 6 | Lag behind the (irreversible) head |
-| `BLOCKS_HEAD_MODE` | `irreversible` | `irreversible` or `head` |
-| `REPLAY_BATCH_SIZE` | 25 | Blocks fetched in parallel during catch-up |
-| `BLOCK_CACHE_DIR` | (none) | On-disk cache of raw Hive blocks |
-| `HASH_LOG` | (none) | Append `block_num l2_block_id` lines here |
-| `STOP_BLOCK` | 0 | Stop after this block |
-| `CUSTOM_JSON_ID` / `CUSTOM_JSON_PREFIX` | `sm_sps` / `sm_` | Upstream operation ids |
-| `SNAPSHOT_DIR` | (none) | Export a portable seed here (see Snapshots) |
-| `SNAPSHOT_EVERY` | 28800 | Export on multiples of this block number (≈ daily) |
-| `SNAPSHOT_KEEP` | 3 | Seed exports kept in `SNAPSHOT_DIR` |
+| Variable                                | Default          | Purpose                                            |
+| --------------------------------------- | ---------------- | -------------------------------------------------- |
+| `SEED_FILE`                             | `seed.ndjson`    | NDJSON (or `.gz`) seed                             |
+| `RPC_NODES`                             | 5 public nodes   | Comma-separated Hive RPC endpoints                 |
+| `BLOCKS_BEHIND_HEAD`                    | 6                | Lag behind the (irreversible) head                 |
+| `BLOCKS_HEAD_MODE`                      | `irreversible`   | `irreversible` or `head`                           |
+| `REPLAY_BATCH_SIZE`                     | 25               | Blocks fetched in parallel during catch-up         |
+| `BLOCK_CACHE_DIR`                       | (none)           | On-disk cache of raw Hive blocks                   |
+| `HASH_LOG`                              | (none)           | Append `block_num l2_block_id` lines here          |
+| `STOP_BLOCK`                            | 0                | Stop after this block                              |
+| `CUSTOM_JSON_ID` / `CUSTOM_JSON_PREFIX` | `sm_sps` / `sm_` | Upstream operation ids                             |
+| `SNAPSHOT_DIR`                          | (none)           | Export a portable seed here (see Snapshots)        |
+| `SNAPSHOT_EVERY`                        | 28800            | Export on multiples of this block number (≈ daily) |
+| `SNAPSHOT_KEEP`                         | 3                | Seed exports kept in `SNAPSHOT_DIR`                |
 
 ## Snapshots
 
@@ -140,13 +167,12 @@ With `VALIDATOR_ACCOUNTS` set, the validator also performs the validator's dutie
 account. Every `validate_block` and `check_in_validator` transaction is built exactly as upstream's
 `HiveClient` broadcasts it (one `custom_json`, `id: sm_sps`, posting authority).
 
-- **Shadow mode** (default): transactions are logged; nothing is signed or sent and no key is read.
-- **Live mode** (`VALIDATOR_MODE=live`): transactions are signed and broadcast, referencing the
-  head block and expiring 60 s after it. Signatures are byte-identical to dhive's
+- **Signing**: transactions are signed and broadcast, referencing the head block and expiring 60 s
+  after it. Signatures are byte-identical to dhive's
   (`src/hive/signing.spec.mts`). `VALIDATOR_KEY` holds one or more posting key WIFs, comma-separated;
   at startup each account is matched with a key that alone satisfies its posting authority
   (directly, or through an `account_auths` grant). An account no key can sign for, or a malformed
-  key, is reported and skipped: its duties stay in shadow mode and the process keeps running.
+  key, is reported and skipped; the others keep running. With no account left, startup fails.
   Keys are removed from `process.env` once read and never logged.
 
 - **Block validation** (upstream `processor.ts`): when the seeded PRNG picks a listed account for a
@@ -168,38 +194,36 @@ account. Every `validate_block` and `check_in_validator` transaction is built ex
   (for example, sent by the upstream node that holds the key) is compared with this node's hash and
   with what it intended to send.
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `VALIDATOR_ACCOUNTS` | (none) | Comma-separated validator accounts (`VALIDATOR_ACCOUNT` also accepted); empty disables duties |
-| `VALIDATOR_MODE` | `shadow` | `shadow` (log only) or `live` (sign and broadcast) |
-| `VALIDATOR_KEY` | (none) | Live mode: posting key WIFs, comma-separated. In the container, `var/validator.env` (`scripts/make-validator-env.sh`) |
-| `VALIDATE_BLOCK_DELAY` | 0 | 0 = leader; `N` = follower that waits `N` blocks |
-| `ENABLE_CHECK_INS` | `true` | Check in for the listed accounts |
-| `CHECK_IN_RETRY_BLOCKS` | 100 | Re-send an unconfirmed check-in after this many blocks |
-| `VALIDATOR_VERSION` | `1.5.1-mini.0` | `version` param (recorded on chain as the validator's `last_version`) |
-| `ENABLE_PRICE_FEED` | `true` | Price feed duty (runs only for top validators) |
-| `PRICE_FEED_DAO_API_URL` | `https://prices.splinterlands.workers.dev` | DAO HIVE/USD feed (no key) |
-| `PRICE_FEED_COIN_GECKO_API_KEY` | (none) | Enables the CoinGecko feed (`PRICE_FEED_COIN_GECKO_API_URL`, `_DEMO_API_URL`, `_DEMO` as upstream) |
-| `PRICE_FEED_COIN_MARKET_CAP_API_KEY` | (none) | Enables the CoinMarketCap feed (`PRICE_FEED_COIN_MARKET_CAP_API_URL`, `_TOKEN_MAP` as upstream) |
-| `HIVE_ENGINE_RPC_NODES` | upstream's eight nodes | Hive Engine nodes, in failover order |
-| `DUTY_LOG` | (none) | Also append duty events (JSONL) to this file |
+| Variable                             | Default                                    | Purpose                                                                                                                                        |
+| ------------------------------------ | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VALIDATOR_ACCOUNTS`                 | (none)                                     | Comma-separated validator accounts (`VALIDATOR_ACCOUNT` also accepted); empty disables duties                                                  |
+| `VALIDATOR_KEY`                      | (none)                                     | Posting key WIFs, comma-separated; required with `VALIDATOR_ACCOUNTS`. In the container, `var/validator.env` (`scripts/make-validator-env.sh`) |
+| `VALIDATE_BLOCK_DELAY`               | 0                                          | 0 = leader; `N` = follower that waits `N` blocks                                                                                               |
+| `ENABLE_CHECK_INS`                   | `true`                                     | Check in for the listed accounts                                                                                                               |
+| `CHECK_IN_RETRY_BLOCKS`              | 100                                        | Re-send an unconfirmed check-in after this many blocks                                                                                         |
+| `VALIDATOR_VERSION`                  | `1.5.1-mini.0`                             | `version` param (recorded on chain as the validator's `last_version`)                                                                          |
+| `ENABLE_PRICE_FEED`                  | `true`                                     | Price feed duty (runs only for top validators)                                                                                                 |
+| `PRICE_FEED_DAO_API_URL`             | `https://prices.splinterlands.workers.dev` | DAO HIVE/USD feed (no key)                                                                                                                     |
+| `PRICE_FEED_COIN_GECKO_API_KEY`      | (none)                                     | Enables the CoinGecko feed (`PRICE_FEED_COIN_GECKO_API_URL`, `_DEMO_API_URL`, `_DEMO` as upstream)                                             |
+| `PRICE_FEED_COIN_MARKET_CAP_API_KEY` | (none)                                     | Enables the CoinMarketCap feed (`PRICE_FEED_COIN_MARKET_CAP_API_URL`, `_TOKEN_MAP` as upstream)                                                |
+| `HIVE_ENGINE_RPC_NODES`              | upstream's eight nodes                     | Hive Engine nodes, in failover order                                                                                                           |
+| `DUTY_LOG`                           | (none)                                     | Also append duty events (JSONL) to this file                                                                                                   |
 
-Duty log lines (`mode: "shadow"` or `"live"`):
+Duty log lines:
 
-| msg | status | meaning |
-|---|---|---|
-| `shadow broadcast` | info | a transaction this node would send; `custom_json` is the exact operation (`reason: no_key` in live mode for a skipped account) |
-| `duty deferred` / `duty skipped` | info / warning | follower hold, leader already validated, paused, or too old after the delay |
-| `observed validation` | ok / error | on-chain `validate_block` by a listed account; `match` = its hash equals ours, `intent_match` = equals what we would have sent |
-| `observed check-in` | ok / error | on-chain check-in; `match` = its hash equals ours for that block; `blocks_from_intent` = how far it landed from our intended block |
-| `validation missed` | error | a block we would have validated passed `max_block_age` with no validation on chain |
-| `posting authority verified` | info | live startup, per account: the signing public key and `via` (`key` or `account_auth` + `grantee`) |
-| `validator account skipped` | error | live startup: no configured key can sign for the account; it stays in shadow (`reason`) |
-| `validator key skipped` | error | live startup: a malformed key (`key_index`, never the value) |
-| `price feed source failed` | warning | one external feed failed (others may still answer) |
-| `price feed failed` | error | no price this time; retried on the next block |
-| `broadcast sent` | info | live: the node accepted the transaction; `trx_id`, `expiration`, `ms`, `duplicate` when a retry found it already accepted |
-| `broadcast failed` | error | live: `stage` `prepare` (no head block) or `send` (rejected or unreachable); `error` |
+| msg                              | status         | meaning                                                                                                                            |
+| -------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `duty deferred` / `duty skipped` | info / warning | follower hold, leader already validated, paused, or too old after the delay                                                        |
+| `observed validation`            | ok / error     | on-chain `validate_block` by a listed account; `match` = its hash equals ours, `intent_match` = equals what we would have sent     |
+| `observed check-in`              | ok / error     | on-chain check-in; `match` = its hash equals ours for that block; `blocks_from_intent` = how far it landed from our intended block |
+| `validation missed`              | error          | a block we would have validated passed `max_block_age` with no validation on chain                                                 |
+| `posting authority verified`     | info           | startup, per account: the signing public key and `via` (`key` or `account_auth` + `grantee`)                                       |
+| `validator account skipped`      | error          | startup: no configured key can sign for the account; it has no duties (`reason`)                                                   |
+| `validator key skipped`          | error          | startup: a malformed key (`key_index`, never the value)                                                                            |
+| `price feed source failed`       | warning        | one external feed failed (others may still answer)                                                                                 |
+| `price feed failed`              | error          | no price this time; retried on the next block                                                                                      |
+| `broadcast sent`                 | info           | the node accepted the transaction; `trx_id`, `expiration`, `ms`, `duplicate` when a retry found it already accepted                |
+| `broadcast failed`               | error          | `stage` `prepare` (no head block, no key for the account) or `send` (rejected or unreachable); `error`                             |
 
 ## Logs and health check
 
@@ -211,17 +235,17 @@ Validator block line, emitted for every block once within 50 blocks of the head 
 {"ts":"2026-11-01T14:07:03.323Z","status":"info","msg":"block","block_num":111284491,"l2_block_id":"ea32…64ac","txs":2,"validator":"bamlolx","reward":0.364581,"reward_token":"SPS","head_block":111284491,"behind":0,"rate":0.33,"rss_mb":875}
 ```
 
-| field | meaning |
-|---|---|
-| `block_num` | Hive block number that was just processed |
-| `l2_block_id` | the computed L2 block hash: `sha256(previous l2_block_id + "." + JSON of the block's transaction rows)`; must equal `blocks.l2_block_id` in the upstream database |
-| `txs` | number of L2 transactions in the block (matching `custom_json` ops plus virtual ops such as expirations) |
-| `validator` | the validator that upstream's seeded RNG selects to validate this block (`null` when none is selected) |
-| `reward`, `reward_token` | amount and token paid to that validator if it validates the block |
-| `head_block` | the newest block the validator is allowed to process (last irreversible block minus `BLOCKS_BEHIND_HEAD`) |
-| `behind` | `head_block - block_num`; 0 means caught up |
-| `rate` | blocks processed per second over the last 200 blocks (about 0.33 at the head, since Hive produces one block every 3 s) |
-| `rss_mb` | resident memory of the validator process |
+| field                    | meaning                                                                                                                                                           |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `block_num`              | Hive block number that was just processed                                                                                                                         |
+| `l2_block_id`            | the computed L2 block hash: `sha256(previous l2_block_id + "." + JSON of the block's transaction rows)`; must equal `blocks.l2_block_id` in the upstream database |
+| `txs`                    | number of L2 transactions in the block (matching `custom_json` ops plus virtual ops such as expirations)                                                          |
+| `validator`              | the validator that upstream's seeded RNG selects to validate this block (`null` when none is selected)                                                            |
+| `reward`, `reward_token` | amount and token paid to that validator if it validates the block                                                                                                 |
+| `head_block`             | the newest block the validator is allowed to process (last irreversible block minus `BLOCKS_BEHIND_HEAD`)                                                         |
+| `behind`                 | `head_block - block_num`; 0 means caught up                                                                                                                       |
+| `rate`                   | blocks processed per second over the last 200 blocks (about 0.33 at the head, since Hive produces one block every 3 s)                                            |
+| `rss_mb`                 | resident memory of the validator process                                                                                                                          |
 
 The `checker` service compares the newest `CHECK_WINDOW` lines of `hashes.log` with the upstream `blocks` table every `CHECK_INTERVAL_SECONDS` and emits one line:
 
@@ -229,13 +253,13 @@ The `checker` service compares the newest `CHECK_WINDOW` lines of `hashes.log` w
 {"ts":"…","status":"ok","msg":"hashes match","reason":"ok","compared":5000,"matching":5000,"mismatching":0,"first_mismatch":null,"validator_head":111284491,"db_head":111284491,"lag":0,"window_blocks":5000}
 ```
 
-| status | reason | meaning |
-|---|---|---|
-| `ok` | `ok` | every compared hash matches and the validator is within `CHECK_MAX_LAG` blocks of the DB head |
-| `error` | `mismatch` | at least one hash differs; `first_mismatch` has the block and both hashes |
-| `error` | `lagging` | no mismatch, but the validator is more than `CHECK_MAX_LAG` blocks behind the database and not gaining on it |
-| `warning` | `catching_up` | more than `CHECK_MAX_LAG` behind but replaying faster than the chain (normal for a few minutes after a restart) |
-| `warning` | `no_log`, `no_overlap`, `db_error` | nothing could be compared (empty log, blocks not in the DB yet, or Postgres unreachable) |
+| status    | reason                             | meaning                                                                                                         |
+| --------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `ok`      | `ok`                               | every compared hash matches and the validator is within `CHECK_MAX_LAG` blocks of the DB head                   |
+| `error`   | `mismatch`                         | at least one hash differs; `first_mismatch` has the block and both hashes                                       |
+| `error`   | `lagging`                          | no mismatch, but the validator is more than `CHECK_MAX_LAG` blocks behind the database and not gaining on it    |
+| `warning` | `catching_up`                      | more than `CHECK_MAX_LAG` behind but replaying faster than the chain (normal for a few minutes after a restart) |
+| `warning` | `no_log`, `no_overlap`, `db_error` | nothing could be compared (empty log, blocks not in the DB yet, or Postgres unreachable)                        |
 
 The checker joins the upstream compose network (`validator:postgres`) and reads credentials from `var/checker.env`, created with `scripts/make-checker-env.sh` from the running `pg` container's environment. The file is mode 600 and gitignored.
 

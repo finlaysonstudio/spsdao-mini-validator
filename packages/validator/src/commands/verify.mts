@@ -1,5 +1,5 @@
 /**
- * `sps-mini verify <seed.ndjson.gz> [--reference <url>]`: check a downloaded seed before use.
+ * `sps-mini-validator verify <seed.ndjson.gz> [--reference <url>]`: check a downloaded seed before use.
  *
  * - The manifest next to the seed (if present) must match the file's size and sha256, and its
  *   block and hash must equal the seed's meta line.
@@ -42,7 +42,7 @@ function option(argv: string[], name: string): string | undefined {
 
 export async function verifyCommand(argv: string[]): Promise<number> {
   const seed = argv.find((a, i) => !a.startsWith("--") && argv[i - 1] !== "--reference");
-  if (!seed) throw new Error("usage: sps-mini verify <seed.ndjson.gz> [--reference <url>]");
+  if (!seed) throw new Error("usage: sps-mini-validator verify <seed.ndjson.gz> [--reference <url>]");
   const reference = option(argv, "--reference") ?? (process.env.REFERENCE_API || DEFAULT_REFERENCE_API);
   const meta = await readSeedMeta(seed);
   const problems: string[] = [];

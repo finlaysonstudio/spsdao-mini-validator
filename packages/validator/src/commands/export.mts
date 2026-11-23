@@ -1,5 +1,5 @@
 /**
- * `sps-mini export <checkpoint-dir> <out.ndjson.gz> [block] [--verify]`: export a seed (format 2)
+ * `sps-mini-validator export <checkpoint-dir> <out.ndjson.gz> [block] [--verify]`: export a seed (format 2)
  * from a checkpoint, optionally proving it reloads to the same state.
  *
  * Without a block, the newest checkpoint is used. --verify reloads the seed and compares every
@@ -16,7 +16,7 @@ export async function exportCommand(argv: string[]): Promise<number> {
   const args = argv.filter((a) => !a.startsWith("--"));
   const verify = argv.includes("--verify");
   const [dir, out, blockArg] = args;
-  if (!dir || !out) throw new Error("usage: sps-mini export <checkpoint-dir> <out.ndjson.gz> [block] [--verify]");
+  if (!dir || !out) throw new Error("usage: sps-mini-validator export <checkpoint-dir> <out.ndjson.gz> [block] [--verify]");
 
   const block = blockArg ? parseInt(blockArg, 10) : listCheckpoints(dir).at(-1);
   if (block === undefined) throw new Error(`no checkpoints in ${dir}`);

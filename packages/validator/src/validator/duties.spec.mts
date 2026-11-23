@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { Fixture } from "../__tests__/fixture.mjs";
 import { TOKENS } from "../repos/context.mjs";
 import type { TransactionEntity } from "../types.mjs";
-import { checkInJitter, customJson, ShadowBroadcaster, ValidatorDuties, type BroadcastRequest, type DutyEvent } from "./duties.mjs";
+import { checkInJitter, customJson, ValidatorDuties, type BroadcastRequest, type DutyEvent } from "./duties.mjs";
 
 const MAX_AGE = 100; // DEFAULT_CONFIG.validator.max_block_age
 const INTERVAL = 28800; // DEFAULT_CONFIG.validator_check_in
@@ -12,7 +12,7 @@ const WINDOW = 300;
 class Recorder {
   sent: BroadcastRequest[] = [];
   events: DutyEvent[] = [];
-  readonly broadcaster = { mode: "shadow" as const, send: (r: BroadcastRequest) => void this.sent.push(r) };
+  readonly broadcaster = { send: (r: BroadcastRequest) => void this.sent.push(r) };
   readonly emit = (e: DutyEvent) => void this.events.push(e);
   of(action: string) {
     return this.sent.filter((s) => s.action === action);
@@ -197,13 +197,9 @@ describe("check-ins", () => {
   });
 });
 
-describe("ShadowBroadcaster", () => {
-  it("logs the custom_json upstream would broadcast", () => {
-    const events: DutyEvent[] = [];
+describe("customJson", () => {
+  it("builds the custom_json upstream broadcasts", () => {
     const request: BroadcastRequest = { account: "alpha", action: "validate_block", params: { block_num: 5, hash: "h", version: "v" }, context: {} };
-    new ShadowBroadcaster({ emit: (e) => void events.push(e) }).send(request);
-    expect(events[0].msg).toBe("shadow broadcast");
-    expect(events[0].fields.custom_json).toEqual({ id: "sm_sps", required_auths: [], required_posting_auths: ["alpha"], json: '{"action":"validate_block","params":{"block_num":5,"hash":"h","version":"v"}}' });
-    expect(customJson({ id: "sm_sps", request }).json).toBe(events[0].fields.custom_json && (events[0].fields.custom_json as { json: string }).json);
+    expect(customJson({ id: "sm_sps", request })).toEqual({ id: "sm_sps", required_auths: [], required_posting_auths: ["alpha"], json: '{"action":"validate_block","params":{"block_num":5,"hash":"h","version":"v"}}' });
   });
 });
