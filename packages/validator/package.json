@@ -15,7 +15,7 @@
     "./types": "./src/types.mts"
   },
   "bin": {
-    "sps-mini": "dist/cli.mjs"
+    "sps-mini-validator": "dist/cli.mjs"
   },
   "files": [
     "dist"

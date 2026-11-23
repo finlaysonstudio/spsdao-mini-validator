@@ -21,9 +21,9 @@ curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validat
 
 ### Native Install
 
-Requires Node 24+.
+Requires Node 24+. Installs `sps-mini-validator`
 
-Native install (Node 24+; installs the `sps-mini` CLI with npm and a systemd user unit or launchd agent):
+Native install (Node 24+; installs the `sps-mini-validator` CLI with npm and a systemd user unit or launchd agent):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validator/main/install.sh | sh -s -- --native-install
@@ -39,10 +39,11 @@ curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validat
 
 The installer downloads `seed-latest.ndjson.gz` (or `seed-genesis.ndjson.gz`) from the GitHub
 release, checks it against the release's `SHA256SUMS`, writes `.env` (mode 600) and starts the
-service. With `--accounts` it waits for `VALIDATOR_KEY` to be added to `.env` instead of starting. `sps-mini verify <seed>` also checks a seed's hash against the Splinterlands archive API.
-Files follow the XDG Base Directory Specification: configuration (`.env`, see Environment) in
-`~/.config/sps-mini`, seed, checkpoints and snapshots in `~/.local/share/sps-mini`, the chunk cache in
-`~/.cache/sps-mini`, and logs in `~/.local/state/sps-mini` (each honours its `XDG_*_HOME` variable).
+service. With `--accounts` it waits for `VALIDATOR_KEY` to be added to `.env` instead of starting. `sps-mini-validator verify <seed>` also checks a seed's hash against the Splinterlands archive API.
+Files follow the XDG Base Directory Specification (each honours its `XDG_*_HOME` variable):
+configuration (`.env`, see Environment) in `~/.config/sps-mini-validator`, seed, checkpoints and
+snapshots in `~/.local/share/sps-mini-validator`, the chunk cache in `~/.cache/sps-mini-validator`,
+and logs in `~/.local/state/sps-mini-validator`.
 
 Releases (`.github/workflows/release.yml`, on tag `v*`): multi-arch image on GHCR, npm tarball,
 `install.sh`, seeds carried forward from the previous release. `scripts/publish-seed.sh <seed>

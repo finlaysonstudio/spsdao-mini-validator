@@ -6,7 +6,7 @@
 #
 # Options:
 #   --docker            run in Docker (default; image ghcr.io/finlaysonstudio/spsdao-mini-validator)
-#   --native-install    install the sps-mini CLI with npm (Node 24+) and a systemd/launchd service
+#   --native-install    install the sps-mini-validator CLI with npm (Node 24+) and a systemd/launchd service
 #   --genesis           start from the genesis seed (block 93703455) and replay to head (hours, ~6 GB
 #                       chunk cache) instead of the latest published seed
 #   --accounts a,b      validator accounts to perform duties for; add their posting key(s) as
@@ -16,10 +16,10 @@
 #   --no-start          write files without starting
 #
 # Files follow the XDG Base Directory Specification:
-#   config  ${XDG_CONFIG_HOME:-~/.config}/sps-mini       .env, docker-compose.yml, run.sh
-#   data    ${XDG_DATA_HOME:-~/.local/share}/sps-mini    seed, checkpoints, snapshots
-#   cache   ${XDG_CACHE_HOME:-~/.cache}/sps-mini         block chunk cache, downloads
-#   state   ${XDG_STATE_HOME:-~/.local/state}/sps-mini   hashes.log, duties.log, service log
+#   config  ${XDG_CONFIG_HOME:-~/.config}/sps-mini-validator       .env, docker-compose.yml, run.sh
+#   data    ${XDG_DATA_HOME:-~/.local/share}/sps-mini-validator    seed, checkpoints, snapshots
+#   cache   ${XDG_CACHE_HOME:-~/.cache}/sps-mini-validator         block chunk cache, downloads
+#   state   ${XDG_STATE_HOME:-~/.local/state}/sps-mini-validator   hashes.log, duties.log, service log
 set -eu
 
 REPO="finlaysonstudio/spsdao-mini-validator"
@@ -56,10 +56,10 @@ if [ -n "$DIR" ]; then
   CACHE_DIR="$DIR/cache"
   STATE_DIR="$DIR/state"
 else
-  CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/sps-mini"
-  DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/sps-mini"
-  CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/sps-mini"
-  STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/sps-mini"
+  CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/sps-mini-validator"
+  DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/sps-mini-validator"
+  CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/sps-mini-validator"
+  STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/sps-mini-validator"
 fi
 
 need curl
@@ -130,7 +130,7 @@ if [ "$MODE" = "docker" ]; then
 services:
   validator:
     image: ${IMAGE}:${TAG}
-    container_name: sps-mini
+    container_name: sps-mini-validator
     restart: unless-stopped
     env_file: .env
     environment:
@@ -167,11 +167,11 @@ need node
 need npm
 NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
 [ "$NODE_MAJOR" -ge 24 ] || die "Node 24 or newer is required (found $(node -v))"
-say "Installing sps-mini (${VERSION}) with npm"
+say "Installing sps-mini-validator (${VERSION}) with npm"
 fetch "spsdao-mini-validator.tgz" "$CACHE_DIR/spsdao-mini-validator.tgz"
 npm install --global "$CACHE_DIR/spsdao-mini-validator.tgz"
-BIN=$(command -v sps-mini) || die "sps-mini not on PATH after npm install"
-sps-mini version
+BIN=$(command -v sps-mini-validator) || die "sps-mini-validator not on PATH after npm install"
+sps-mini-validator version
 
 cat > run.sh <<EOF
 #!/bin/sh
@@ -187,7 +187,7 @@ case "$(uname -s)" in
   Linux)
     need systemctl
     mkdir -p "${HOME}/.config/systemd/user"
-    cat > "${HOME}/.config/systemd/user/sps-mini.service" <<EOF
+    cat > "${HOME}/.config/systemd/user/sps-mini-validator.service" <<EOF
 [Unit]
 Description=SPS Mini Validator
 After=network-online.target
@@ -202,8 +202,8 @@ WantedBy=default.target
 EOF
     if [ "$START" = 1 ]; then
       systemctl --user daemon-reload
-      systemctl --user enable --now sps-mini
-      say "Started. Logs: journalctl --user -u sps-mini -f (enable lingering to run without a login: loginctl enable-linger)"
+      systemctl --user enable --now sps-mini-validator
+      say "Started. Logs: journalctl --user -u sps-mini-validator -f (enable lingering to run without a login: loginctl enable-linger)"
     fi
     ;;
   Darwin)
@@ -219,15 +219,15 @@ EOF
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(dirname "$(command -v node)"):/usr/bin:/bin</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>${STATE_DIR}/sps-mini.log</string>
-  <key>StandardErrorPath</key><string>${STATE_DIR}/sps-mini.log</string>
+  <key>StandardOutPath</key><string>${STATE_DIR}/sps-mini-validator.log</string>
+  <key>StandardErrorPath</key><string>${STATE_DIR}/sps-mini-validator.log</string>
 </dict>
 </plist>
 EOF
     if [ "$START" = 1 ]; then
       launchctl unload "$PLIST" 2>/dev/null || true
       launchctl load "$PLIST"
-      say "Started. Logs: tail -f ${STATE_DIR}/sps-mini.log"
+      say "Started. Logs: tail -f ${STATE_DIR}/sps-mini-validator.log"
     fi
     ;;
   *)
