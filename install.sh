@@ -9,7 +9,8 @@
 #   --native-install    install the sps-mini CLI with npm (Node 24+) and a systemd/launchd service
 #   --genesis           start from the genesis seed (block 93703455) and replay to head (hours, ~6 GB
 #                       chunk cache) instead of the latest published seed
-#   --accounts a,b      validator accounts for shadow-mode duties (no keys are read)
+#   --accounts a,b      validator accounts to perform duties for; add their posting key(s) as
+#                       VALIDATOR_KEY in the config .env before starting
 #   --dir DIR           keep everything under DIR instead of the XDG directories below
 #   --version TAG       release tag (default: latest)
 #   --no-start          write files without starting
@@ -39,7 +40,7 @@ while [ $# -gt 0 ]; do
     --dir) DIR="$2"; shift ;;
     --version) VERSION="$2"; shift ;;
     --no-start) START=0 ;;
-    -h|--help) sed -n '2,21p' "$0" 2>/dev/null || true; exit 0 ;;
+    -h|--help) sed -n '2,22p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -106,13 +107,18 @@ CHUNK_CACHE_DIR=${CACHE_DIR}/chunks
 HASH_LOG=${STATE_DIR}/hashes.log
 SNAPSHOT_DIR=${DATA_DIR}/snapshots
 VALIDATOR_ACCOUNTS=${ACCOUNTS}
-VALIDATOR_MODE=shadow
+# Posting key WIF(s), comma-separated, for VALIDATOR_ACCOUNTS (required when it is set).
+VALIDATOR_KEY=
 DUTY_LOG=${STATE_DIR}/duties.log
 EOF
   chmod 600 .env
   say "Wrote ${CONFIG_DIR}/.env"
 else
   say "Keeping existing ${CONFIG_DIR}/.env"
+fi
+if grep -q '^VALIDATOR_ACCOUNTS=.' .env && ! grep -q '^VALIDATOR_KEY=.' .env; then
+  say "Add VALIDATOR_KEY to ${CONFIG_DIR}/.env, then start the validator"
+  START=0
 fi
 
 # ---------------------------------------------------------------- docker

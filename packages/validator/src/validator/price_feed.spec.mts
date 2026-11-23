@@ -9,7 +9,7 @@ const H = 111_000_000;
 const fx = new Fixture();
 let sent: BroadcastRequest[];
 let events: DutyEvent[];
-const broadcaster = { mode: "shadow" as const, send: (r: BroadcastRequest) => void sent.push(r) };
+const broadcaster = { send: (r: BroadcastRequest) => void sent.push(r) };
 const emit = (e: DutyEvent) => void events.push(e);
 const noWait = async () => undefined;
 

@@ -1,7 +1,6 @@
 #!/bin/sh
 # Write var/validator.env with the validator posting key, read from a running node's
 # container environment (default: the upstream validator). Nothing is printed.
-# The validator stays in shadow mode until VALIDATOR_MODE=live is added to that file.
 #
 #   scripts/make-validator-env.sh [container] [out]
 set -eu
@@ -12,10 +11,6 @@ mkdir -p "$(dirname "$out")"
 umask 077
 key=$(docker inspect "$container" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^VALIDATOR_KEY=//p')
 [ -n "$key" ] || { echo "no VALIDATOR_KEY in $container" >&2; exit 1; }
-mode=$(sed -n 's/^VALIDATOR_MODE=//p' "$out" 2>/dev/null || true)
-{
-  echo "VALIDATOR_KEY=$key"
-  [ -n "$mode" ] && echo "VALIDATOR_MODE=$mode"
-} > "$out"
+echo "VALIDATOR_KEY=$key" > "$out"
 chmod 600 "$out"
-echo "wrote $out (key from $container, mode ${mode:-shadow})"
+echo "wrote $out (key from $container)"

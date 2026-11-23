@@ -16,9 +16,8 @@ services:
       CUSTOM_JSON_PREFIX: sm_
       BLOCKS_BEHIND_HEAD: "6"
       BLOCKS_HEAD_MODE: irreversible
-      # Validator duties for these accounts. VALIDATOR_MODE (default shadow: compute and log,
-      # send nothing) and VALIDATOR_KEY come from var/validator.env
-      # (scripts/make-validator-env.sh); VALIDATOR_MODE=live there signs and broadcasts.
+      # Validator duties for these accounts, signed with VALIDATOR_KEY from var/validator.env
+      # (scripts/make-validator-env.sh) and broadcast.
       VALIDATOR_ACCOUNTS: nullfame
       VALIDATE_BLOCK_DELAY: "0"
       DUTY_LOG: /data/duties.log

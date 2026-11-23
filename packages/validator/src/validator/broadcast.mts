@@ -8,7 +8,7 @@
  * ValidatorDuties reports a validation that never reached the chain as "validation missed".
  *
  * Each account signs with whichever configured key holds its posting authority. An account
- * no key can sign for is skipped (its duties stay in shadow mode); the process keeps running.
+ * no key can sign for is skipped at startup (resolveSigners).
  */
 import * as client from "../hive/client.mjs";
 import { expirationAfter, PrivateKey, refBlock, signTransaction, transactionId, type SignedTransaction, type Transaction } from "../hive/signing.mjs";
@@ -92,11 +92,9 @@ export async function resolveSigners({ accounts, keys, chain = defaultChain }: {
 }
 
 export class LiveBroadcaster implements Broadcaster {
-  readonly mode = "live" as const;
   private readonly emit: (event: DutyEvent) => void;
   private readonly customJsonId: string;
   private readonly keys: Map<string, PrivateKey>;
-  private readonly fallback: Broadcaster | null;
   private readonly chain: Chain;
   private readonly expirationSeconds: number;
   private readonly inflight = new Set<Promise<void>>();
@@ -104,22 +102,18 @@ export class LiveBroadcaster implements Broadcaster {
   constructor({
     emit,
     signers,
-    fallback = null,
     customJsonId = "sm_sps",
     chain = defaultChain,
     expirationSeconds = 60,
   }: {
     emit: (event: DutyEvent) => void;
     signers: Signer[];
-    /** Receives requests for accounts without a signer (a ShadowBroadcaster: logged, not sent). */
-    fallback?: Broadcaster | null;
     customJsonId?: string;
     chain?: Chain;
     expirationSeconds?: number;
   }) {
     this.emit = emit;
     this.keys = new Map(signers.map((s) => [s.account, s.key]));
-    this.fallback = fallback;
     this.customJsonId = customJsonId;
     this.chain = chain;
     this.expirationSeconds = expirationSeconds;
@@ -128,7 +122,7 @@ export class LiveBroadcaster implements Broadcaster {
   send(request: BroadcastRequest): void {
     const key = this.keys.get(request.account);
     if (!key) {
-      this.fallback?.send({ ...request, context: { ...request.context, reason: "no_key" } });
+      this.emit({ status: "error", msg: "broadcast failed", fields: { action: request.action, account: request.account, ...request.params, ...request.context, stage: "prepare", error: "no key for account" } });
       return;
     }
     const p = this.broadcast(request, key).finally(() => this.inflight.delete(p));

@@ -41,19 +41,17 @@ export const config = {
   referenceApi: env("REFERENCE_API", ""),
   /** Verify against the reference every this many blocks (and always before a checkpoint). */
   verifyEvery: envInt("VERIFY_EVERY", 10000),
-  /** Validator accounts to validate and check in for (comma-separated; VALIDATOR_ACCOUNT also accepted). Empty = no duties (hashes only). */
+  /**
+   * Validator accounts to validate and check in for (comma-separated; VALIDATOR_ACCOUNT also accepted).
+   * Empty = no duties (hashes only). Duties are signed and broadcast: VALIDATOR_KEY holds one or more
+   * posting WIFs (comma-separated) and each account signs with the one holding its posting authority.
+   * An account none can sign for is skipped; with no account left, startup fails. Keys are read once
+   * at startup and removed from process.env; they are never part of this object.
+   */
   validatorAccounts: env("VALIDATOR_ACCOUNTS", env("VALIDATOR_ACCOUNT", ""))
     .split(",")
     .map((a) => a.trim())
     .filter(Boolean),
-  /**
-   * "shadow": duties are computed and logged, nothing is signed or sent.
-   * "live": duties are signed and broadcast. VALIDATOR_KEY holds one or more posting WIFs
-   * (comma-separated); each account signs with the one holding its posting authority, and an
-   * account none can sign for is skipped (kept in shadow). Keys are read once at startup and
-   * removed from process.env; they are never part of this object.
-   */
-  validatorMode: env("VALIDATOR_MODE", "shadow") as "shadow" | "live",
   /** Fire Horse VALIDATE_BLOCK_DELAY: 0 = leader, > 0 = follower. */
   validateBlockDelay: envInt("VALIDATE_BLOCK_DELAY", 0),
   enableCheckIns: env("ENABLE_CHECK_INS", "true") === "true",

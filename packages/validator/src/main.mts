@@ -1,7 +1,7 @@
 /**
  * Validator: replay Hive blocks from a seed (or the newest checkpoint),
  * compute each L2 block hash, log it. With VALIDATOR_ACCOUNTS set it also performs
- * validator duties, logged only (VALIDATOR_MODE=shadow) or signed and broadcast (live).
+ * validator duties, signed with VALIDATOR_KEY and broadcast.
  *
  * With REFERENCE_API set, hashes are compared with an upstream archive node
  * every VERIFY_EVERY blocks; on a mismatch the first divergent block is found
@@ -24,7 +24,7 @@ import { StateStore } from "./state/index.mjs";
 import { error, log, logStatus, warn } from "./util/log.mjs";
 import { LiveBroadcaster, parseKeys, resolveSigners } from "./validator/broadcast.mjs";
 import { configuredFeeds, HiveEngine, PriceFeedDuty } from "./validator/price_feed.mjs";
-import { ShadowBroadcaster, ValidatorDuties, type Broadcaster, type DutyEvent } from "./validator/duties.mjs";
+import { ValidatorDuties, type DutyEvent } from "./validator/duties.mjs";
 
 /** Blocks per second over the most recent `size` processed blocks. */
 class RollingRate {
@@ -55,41 +55,35 @@ async function start(): Promise<{ state: StateStore; block_num: number; l2_block
   return { state, block_num: meta.block_num, l2_block_id: meta.l2_block_id, verified: true };
 }
 
-/** Read the posting keys for live mode and drop them from the environment. */
+/** Read the posting keys and drop them from the environment. */
 function takeValidatorKeys(): ReturnType<typeof parseKeys> {
   const value = process.env.VALIDATOR_KEY ?? "";
   delete process.env.VALIDATOR_KEY;
   return parseKeys(value);
 }
 
-type Duties = { duties: ValidatorDuties; priceFeed: PriceFeedDuty | null; mode: "shadow" | "live" };
+type Duties = { duties: ValidatorDuties; priceFeed: PriceFeedDuty | null };
 
 async function makeDuties(svc: Services): Promise<Duties | null> {
   if (config.validatorAccounts.length === 0) {
     delete process.env.VALIDATOR_KEY;
     return null;
   }
-  const mode = config.validatorMode;
-  if (mode !== "shadow" && mode !== "live") throw new Error(`VALIDATOR_MODE=${mode} is not supported; use "shadow" or "live"`);
   const emit = ({ status, msg, fields }: DutyEvent) => {
-    logStatus(status, msg, { mode, ...fields });
-    if (config.dutyLog) appendFileSync(config.dutyLog, JSON.stringify({ ts: new Date().toISOString(), status, msg, mode, ...fields }) + "\n");
+    logStatus(status, msg, fields);
+    if (config.dutyLog) appendFileSync(config.dutyLog, JSON.stringify({ ts: new Date().toISOString(), status, msg, ...fields }) + "\n");
   };
-  const shadow = new ShadowBroadcaster({ emit, customJsonId: config.customJsonId });
-  let broadcaster: Broadcaster = shadow;
-  if (mode === "live") {
-    const { keys, invalid } = takeValidatorKeys();
-    for (const k of invalid) emit({ status: "error", msg: "validator key skipped", fields: { key_index: k.index, reason: k.reason } });
-    const { signers, skipped } = await resolveSigners({ accounts: config.validatorAccounts, keys });
-    for (const s of signers) emit({ status: "info", msg: "posting authority verified", fields: { account: s.account, public_key: s.key.publicKey, via: s.via, grantee: s.grantee ?? null } });
-    for (const s of skipped) emit({ status: "error", msg: "validator account skipped", fields: { account: s.account, reason: s.reason, fallback: "shadow" } });
-    broadcaster = new LiveBroadcaster({ emit, signers, fallback: shadow, customJsonId: config.customJsonId });
-  } else {
-    delete process.env.VALIDATOR_KEY;
-  }
+  const { keys, invalid } = takeValidatorKeys();
+  for (const k of invalid) emit({ status: "error", msg: "validator key skipped", fields: { key_index: k.index, reason: k.reason } });
+  const { signers, skipped } = await resolveSigners({ accounts: config.validatorAccounts, keys });
+  for (const s of signers) emit({ status: "info", msg: "posting authority verified", fields: { account: s.account, public_key: s.key.publicKey, via: s.via, grantee: s.grantee ?? null } });
+  for (const s of skipped) emit({ status: "error", msg: "validator account skipped", fields: { account: s.account, reason: s.reason } });
+  if (signers.length === 0) throw new Error("no configured VALIDATOR_KEY can sign for any of VALIDATOR_ACCOUNTS");
+  const accounts = signers.map((s) => s.account);
+  const broadcaster = new LiveBroadcaster({ emit, signers, customJsonId: config.customJsonId });
   const duties = new ValidatorDuties({
     svc,
-    accounts: config.validatorAccounts,
+    accounts,
     broadcaster,
     emit,
     version: config.validatorVersion,
@@ -98,9 +92,9 @@ async function makeDuties(svc: Services): Promise<Duties | null> {
     checkInRetryBlocks: config.checkInRetryBlocks,
   });
   const feeds = config.enablePriceFeed ? configuredFeeds(config.priceFeed) : [];
-  const priceFeed = feeds.length > 0 ? new PriceFeedDuty({ svc, accounts: config.validatorAccounts, broadcaster, emit, feeds, engine: new HiveEngine(config.hiveEngineRpcNodes) }) : null;
-  log("validator duties enabled", { mode, accounts: config.validatorAccounts, role: duties.role, validate_block_delay: config.validateBlockDelay, check_ins: config.enableCheckIns, price_feeds: feeds.map((f) => f.name), version: config.validatorVersion });
-  return { duties, priceFeed, mode };
+  const priceFeed = feeds.length > 0 ? new PriceFeedDuty({ svc, accounts, broadcaster, emit, feeds, engine: new HiveEngine(config.hiveEngineRpcNodes) }) : null;
+  log("validator duties enabled", { accounts, role: duties.role, validate_block_delay: config.validateBlockDelay, check_ins: config.enableCheckIns, price_feeds: feeds.map((f) => f.name), version: config.validatorVersion });
+  return { duties, priceFeed };
 }
 
 async function main() {
