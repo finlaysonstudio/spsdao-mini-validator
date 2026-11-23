@@ -10,9 +10,15 @@
 #   --genesis           start from the genesis seed (block 93703455) and replay to head (hours, ~6 GB
 #                       chunk cache) instead of the latest published seed
 #   --accounts a,b      validator accounts for shadow-mode duties (no keys are read)
-#   --dir DIR           install directory (default ~/.sps-mini)
+#   --dir DIR           keep everything under DIR instead of the XDG directories below
 #   --version TAG       release tag (default: latest)
 #   --no-start          write files without starting
+#
+# Files follow the XDG Base Directory Specification:
+#   config  ${XDG_CONFIG_HOME:-~/.config}/sps-mini       .env, docker-compose.yml, run.sh
+#   data    ${XDG_DATA_HOME:-~/.local/share}/sps-mini    seed, checkpoints, snapshots
+#   cache   ${XDG_CACHE_HOME:-~/.cache}/sps-mini         block chunk cache, downloads
+#   state   ${XDG_STATE_HOME:-~/.local/state}/sps-mini   hashes.log, duties.log, service log
 set -eu
 
 REPO="finlaysonstudio/spsdao-mini-validator"
@@ -20,7 +26,7 @@ IMAGE="${SPS_MINI_IMAGE:-ghcr.io/finlaysonstudio/spsdao-mini-validator}"
 MODE="docker"
 SEED="latest"
 ACCOUNTS=""
-DIR="${HOME}/.sps-mini"
+DIR=""
 VERSION="latest"
 START=1
 
@@ -33,7 +39,7 @@ while [ $# -gt 0 ]; do
     --dir) DIR="$2"; shift ;;
     --version) VERSION="$2"; shift ;;
     --no-start) START=0 ;;
-    -h|--help) sed -n '2,17p' "$0" 2>/dev/null || true; exit 0 ;;
+    -h|--help) sed -n '2,21p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -42,6 +48,18 @@ done
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
+
+if [ -n "$DIR" ]; then
+  CONFIG_DIR="$DIR"
+  DATA_DIR="$DIR/data"
+  CACHE_DIR="$DIR/cache"
+  STATE_DIR="$DIR/state"
+else
+  CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/sps-mini"
+  DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/sps-mini"
+  CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/sps-mini"
+  STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/sps-mini"
+fi
 
 need curl
 if [ "$VERSION" = "latest" ]; then
@@ -64,44 +82,44 @@ fetch() { # fetch <asset> <dest>
   mv "$2.part" "$2"
 }
 
-mkdir -p "$DIR/data"
-cd "$DIR"
+mkdir -p "$CONFIG_DIR" "$DATA_DIR" "$CACHE_DIR" "$STATE_DIR"
+cd "$CONFIG_DIR"
 
 # ---------------------------------------------------------------- seed
 if [ "$SEED" = "genesis" ]; then SEED_ASSET="seed-genesis.ndjson.gz"; else SEED_ASSET="seed-latest.ndjson.gz"; fi
 say "Downloading ${SEED_ASSET} (${VERSION})"
-fetch SHA256SUMS data/SHA256SUMS
-fetch "$SEED_ASSET" "data/$SEED_ASSET"
-EXPECTED=$(grep " ${SEED_ASSET}\$" data/SHA256SUMS | cut -d' ' -f1)
+fetch SHA256SUMS "$DATA_DIR/SHA256SUMS"
+fetch "$SEED_ASSET" "$DATA_DIR/$SEED_ASSET"
+EXPECTED=$(grep " ${SEED_ASSET}\$" "$DATA_DIR/SHA256SUMS" | cut -d' ' -f1)
 [ -n "$EXPECTED" ] || die "${SEED_ASSET} is not listed in SHA256SUMS"
-[ "$(sha256 "data/$SEED_ASSET")" = "$EXPECTED" ] || die "checksum mismatch for ${SEED_ASSET}"
+[ "$(sha256 "$DATA_DIR/$SEED_ASSET")" = "$EXPECTED" ] || die "checksum mismatch for ${SEED_ASSET}"
 say "Checksum ok"
 
 # ---------------------------------------------------------------- config
 if [ ! -f .env ]; then
   cat > .env <<EOF
 # SPS Mini Validator configuration (see the README "Environment" table).
-SEED_FILE=${DIR}/data/${SEED_ASSET}
-CHECKPOINT_DIR=${DIR}/data/checkpoints
+SEED_FILE=${DATA_DIR}/${SEED_ASSET}
+CHECKPOINT_DIR=${DATA_DIR}/checkpoints
 CHECKPOINT_EVERY=1000
-CHUNK_CACHE_DIR=${DIR}/data/chunks
-HASH_LOG=${DIR}/data/hashes.log
-SNAPSHOT_DIR=${DIR}/data/snapshots
+CHUNK_CACHE_DIR=${CACHE_DIR}/chunks
+HASH_LOG=${STATE_DIR}/hashes.log
+SNAPSHOT_DIR=${DATA_DIR}/snapshots
 VALIDATOR_ACCOUNTS=${ACCOUNTS}
 VALIDATOR_MODE=shadow
-DUTY_LOG=${DIR}/data/duties.log
+DUTY_LOG=${STATE_DIR}/duties.log
 EOF
   chmod 600 .env
-  say "Wrote ${DIR}/.env"
+  say "Wrote ${CONFIG_DIR}/.env"
 else
-  say "Keeping existing ${DIR}/.env"
+  say "Keeping existing ${CONFIG_DIR}/.env"
 fi
 
 # ---------------------------------------------------------------- docker
 if [ "$MODE" = "docker" ]; then
   need docker
   docker compose version >/dev/null 2>&1 || die "docker compose v2 is required"
-  # Paths inside the container are /data; the .env above is for a native install, so map it here.
+  # Paths inside the container are /data, /cache and /state; the .env above is for a native install, so map it here.
   cat > docker-compose.yml <<EOF
 services:
   validator:
@@ -112,12 +130,14 @@ services:
     environment:
       SEED_FILE: /data/${SEED_ASSET}
       CHECKPOINT_DIR: /data/checkpoints
-      CHUNK_CACHE_DIR: /data/chunks
-      HASH_LOG: /data/hashes.log
+      CHUNK_CACHE_DIR: /cache/chunks
+      HASH_LOG: /state/hashes.log
       SNAPSHOT_DIR: /data/snapshots
-      DUTY_LOG: /data/duties.log
+      DUTY_LOG: /state/duties.log
     volumes:
-      - ./data:/data
+      - ${DATA_DIR}:/data
+      - ${CACHE_DIR}:/cache
+      - ${STATE_DIR}:/state
     mem_limit: 4g
     logging:
       driver: json-file
@@ -126,12 +146,12 @@ services:
         max-file: "5"
 EOF
   # The image runs as uid 1000 (node).
-  chmod -R a+rwX data 2>/dev/null || true
-  say "Wrote ${DIR}/docker-compose.yml"
+  chmod -R a+rwX "$DATA_DIR" "$CACHE_DIR" "$STATE_DIR" 2>/dev/null || true
+  say "Wrote ${CONFIG_DIR}/docker-compose.yml"
   if [ "$START" = 1 ]; then
     docker compose pull --ignore-pull-failures
     docker compose up -d
-    say "Started. Logs: cd ${DIR} && docker compose logs -f"
+    say "Started. Logs: cd ${CONFIG_DIR} && docker compose logs -f"
   fi
   exit 0
 fi
@@ -142,16 +162,16 @@ need npm
 NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
 [ "$NODE_MAJOR" -ge 24 ] || die "Node 24 or newer is required (found $(node -v))"
 say "Installing sps-mini (${VERSION}) with npm"
-fetch "spsdao-mini-validator.tgz" "data/spsdao-mini-validator.tgz"
-npm install --global "${DIR}/data/spsdao-mini-validator.tgz"
+fetch "spsdao-mini-validator.tgz" "$CACHE_DIR/spsdao-mini-validator.tgz"
+npm install --global "$CACHE_DIR/spsdao-mini-validator.tgz"
 BIN=$(command -v sps-mini) || die "sps-mini not on PATH after npm install"
 sps-mini version
 
 cat > run.sh <<EOF
 #!/bin/sh
-# Loads ${DIR}/.env and runs the validator (used by the service unit).
+# Loads ${CONFIG_DIR}/.env and runs the validator (used by the service unit).
 set -a
-. "${DIR}/.env"
+. "${CONFIG_DIR}/.env"
 set +a
 exec "${BIN}" run
 EOF
@@ -167,7 +187,7 @@ Description=SPS Mini Validator
 After=network-online.target
 
 [Service]
-ExecStart=${DIR}/run.sh
+ExecStart=${CONFIG_DIR}/run.sh
 Restart=on-failure
 RestartSec=10
 
@@ -189,22 +209,22 @@ EOF
 <plist version="1.0">
 <dict>
   <key>Label</key><string>net.spsdao.mini-validator</string>
-  <key>ProgramArguments</key><array><string>${DIR}/run.sh</string></array>
+  <key>ProgramArguments</key><array><string>${CONFIG_DIR}/run.sh</string></array>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(dirname "$(command -v node)"):/usr/bin:/bin</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>${DIR}/data/sps-mini.log</string>
-  <key>StandardErrorPath</key><string>${DIR}/data/sps-mini.log</string>
+  <key>StandardOutPath</key><string>${STATE_DIR}/sps-mini.log</string>
+  <key>StandardErrorPath</key><string>${STATE_DIR}/sps-mini.log</string>
 </dict>
 </plist>
 EOF
     if [ "$START" = 1 ]; then
       launchctl unload "$PLIST" 2>/dev/null || true
       launchctl load "$PLIST"
-      say "Started. Logs: tail -f ${DIR}/data/sps-mini.log"
+      say "Started. Logs: tail -f ${STATE_DIR}/sps-mini.log"
     fi
     ;;
   *)
-    say "No service manager support for $(uname -s); run ${DIR}/run.sh"
+    say "No service manager support for $(uname -s); run ${CONFIG_DIR}/run.sh"
     ;;
 esac
