@@ -14,9 +14,11 @@
 #   --dir DIR           install directory (default ~/.sps-mini-validator)
 #   --version TAG       release tag (default: latest)
 #   --no-start          write files without starting
+#   --update            update an existing install in <dir> (used by `smv update`): keeps .env and
+#                       data, reuses the recorded mode, skips the seed, rewrites the service and smv
 #
 # Layout under <dir>:
-#   .env, docker-compose.yml, run.sh
+#   .env, install.conf, docker-compose.yml, run.sh, bin/smv (also linked from ~/.local/bin/smv)
 #   data/    seed, checkpoints, snapshots
 #   cache/   block chunk cache, downloads
 #   state/   hashes.log, duties.log, service log
@@ -30,6 +32,7 @@ ACCOUNTS=""
 DIR="${HOME}/.sps-mini-validator"
 VERSION="latest"
 START=1
+UPDATE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -40,7 +43,8 @@ while [ $# -gt 0 ]; do
     --dir) DIR="$2"; shift ;;
     --version) VERSION="$2"; shift ;;
     --no-start) START=0 ;;
-    -h|--help) sed -n '2,22p' "$0" 2>/dev/null || true; exit 0 ;;
+    --update) UPDATE=1 ;;
+    -h|--help) sed -n '2,24p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -55,16 +59,32 @@ DATA_DIR="$DIR/data"
 CACHE_DIR="$DIR/cache"
 STATE_DIR="$DIR/state"
 
+conf_get() { sed -n "s/^$1='\(.*\)'\$/\1/p" "$DIR/install.conf"; }
+
 need curl
-if [ "$VERSION" = "latest" ]; then
-  BASE="https://github.com/${REPO}/releases/latest/download"
-  TAG="latest"
-else
-  BASE="https://github.com/${REPO}/releases/download/${VERSION}"
-  TAG="${VERSION}"
+if [ "$UPDATE" = 1 ]; then
+  [ -f "$DIR/install.conf" ] || die "no install in $DIR to update (install.conf is missing)"
+  # Reuse the recorded mode, seed and mirror.
+  MODE=$(conf_get MODE)
+  SEED_ASSET=$(conf_get SEED_ASSET)
+  RECORDED_BASE=$(conf_get RELEASE_BASE)
+  [ -z "${SPS_MINI_RELEASE_BASE:-}" ] && [ -n "$RECORDED_BASE" ] && SPS_MINI_RELEASE_BASE=$RECORDED_BASE
+  [ -n "$MODE" ] || die "install.conf does not record the install mode"
 fi
 # Mirror of the release assets (testing, air-gapped installs).
-[ -n "${SPS_MINI_RELEASE_BASE:-}" ] && BASE="$SPS_MINI_RELEASE_BASE"
+RELEASE_BASE="${SPS_MINI_RELEASE_BASE:-}"
+if [ "$VERSION" != "latest" ]; then
+  TAG="$VERSION"
+elif [ -z "$RELEASE_BASE" ]; then
+  # Pin "latest" to its tag so every asset and the image come from the same release.
+  TAG=$(curl -fsSI -o /dev/null -w '%{redirect_url}' "https://github.com/${REPO}/releases/latest" 2>/dev/null | sed -n 's#.*/releases/tag/##p')
+  [ -n "$TAG" ] || TAG="latest"
+else
+  TAG="latest"
+fi
+if [ -n "$RELEASE_BASE" ]; then BASE="$RELEASE_BASE"
+elif [ "$TAG" = "latest" ]; then BASE="https://github.com/${REPO}/releases/latest/download"
+else BASE="https://github.com/${REPO}/releases/download/${TAG}"; fi
 
 sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
@@ -79,15 +99,61 @@ fetch() { # fetch <asset> <dest>
 mkdir -p "$CONFIG_DIR" "$DATA_DIR" "$CACHE_DIR" "$STATE_DIR"
 cd "$CONFIG_DIR"
 
-# ---------------------------------------------------------------- seed
-if [ "$SEED" = "genesis" ]; then SEED_ASSET="seed-genesis.ndjson.gz"; else SEED_ASSET="seed-latest.ndjson.gz"; fi
-say "Downloading ${SEED_ASSET} (${VERSION})"
+verify() { # verify <asset> <file>: check a downloaded asset against SHA256SUMS
+  EXPECTED=$(grep " $1\$" "$DATA_DIR/SHA256SUMS" | cut -d' ' -f1)
+  [ -n "$EXPECTED" ] || die "$1 is not listed in SHA256SUMS"
+  [ "$(sha256 "$2")" = "$EXPECTED" ] || die "checksum mismatch for $1"
+}
+
 fetch SHA256SUMS "$DATA_DIR/SHA256SUMS"
-fetch "$SEED_ASSET" "$DATA_DIR/$SEED_ASSET"
-EXPECTED=$(grep " ${SEED_ASSET}\$" "$DATA_DIR/SHA256SUMS" | cut -d' ' -f1)
-[ -n "$EXPECTED" ] || die "${SEED_ASSET} is not listed in SHA256SUMS"
-[ "$(sha256 "$DATA_DIR/$SEED_ASSET")" = "$EXPECTED" ] || die "checksum mismatch for ${SEED_ASSET}"
-say "Checksum ok"
+
+# ---------------------------------------------------------------- seed
+if [ "$UPDATE" = 0 ]; then
+  if [ "$SEED" = "genesis" ]; then SEED_ASSET="seed-genesis.ndjson.gz"; else SEED_ASSET="seed-latest.ndjson.gz"; fi
+  say "Downloading ${SEED_ASSET} (${TAG})"
+  fetch "$SEED_ASSET" "$DATA_DIR/$SEED_ASSET"
+  verify "$SEED_ASSET" "$DATA_DIR/$SEED_ASSET"
+  say "Checksum ok"
+else
+  say "Updating ${CONFIG_DIR} to ${TAG}"
+fi
+
+# ---------------------------------------------------------------- smv
+q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+install_smv() { # install_smv <mode> <service>: bin/smv, install.conf and ~/.local/bin/smv
+  mkdir -p "$CONFIG_DIR/bin"
+  fetch smv "$CONFIG_DIR/bin/smv.new"
+  verify smv "$CONFIG_DIR/bin/smv.new"
+  chmod 755 "$CONFIG_DIR/bin/smv.new"
+  # A rename, so a running smv keeps reading the file it started with.
+  mv "$CONFIG_DIR/bin/smv.new" "$CONFIG_DIR/bin/smv"
+  {
+    echo "# Written by install.sh; read by smv and by install.sh --update."
+    echo "MODE=$(q "$1")"
+    echo "SERVICE=$(q "$2")"
+    echo "REPO=$(q "$REPO")"
+    echo "TAG=$(q "$TAG")"
+    echo "IMAGE=$(q "$IMAGE")"
+    echo "SEED_ASSET=$(q "$SEED_ASSET")"
+    echo "RELEASE_BASE=$(q "$RELEASE_BASE")"
+    echo "BIN=$(q "${BIN:-}")"
+    echo "UNIT=$(q "sps-mini-validator")"
+    echo "LABEL=$(q "net.spsdao.mini-validator")"
+    echo "PLIST=$(q "${PLIST:-}")"
+  } > "$CONFIG_DIR/install.conf.new"
+  mv "$CONFIG_DIR/install.conf.new" "$CONFIG_DIR/install.conf"
+  mkdir -p "$HOME/.local/bin"
+  ln -sf "$CONFIG_DIR/bin/smv" "$HOME/.local/bin/smv"
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) say "Add ~/.local/bin to PATH to run smv (or run ${CONFIG_DIR}/bin/smv)" ;;
+  esac
+}
+
+done_message() {
+  say "Manage it with smv: smv status, smv logs -f, smv add-account <name>, smv update"
+}
 
 # ---------------------------------------------------------------- config
 if [ ! -f .env ]; then
@@ -147,11 +213,13 @@ EOF
   # The image runs as uid 1000 (node).
   chmod -R a+rwX "$DATA_DIR" "$CACHE_DIR" "$STATE_DIR" 2>/dev/null || true
   say "Wrote ${CONFIG_DIR}/docker-compose.yml"
+  install_smv docker docker
   if [ "$START" = 1 ]; then
     docker compose pull --ignore-pull-failures
     docker compose up -d
-    say "Started. Logs: cd ${CONFIG_DIR} && docker compose logs -f"
+    say "Started"
   fi
+  done_message
   exit 0
 fi
 
@@ -160,8 +228,9 @@ need node
 need npm
 NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
 [ "$NODE_MAJOR" -ge 24 ] || die "Node 24 or newer is required (found $(node -v))"
-say "Installing sps-mini-validator (${VERSION}) with npm"
+say "Installing sps-mini-validator (${TAG}) with npm"
 fetch "spsdao-mini-validator.tgz" "$CACHE_DIR/spsdao-mini-validator.tgz"
+verify "spsdao-mini-validator.tgz" "$CACHE_DIR/spsdao-mini-validator.tgz"
 npm install --global "$CACHE_DIR/spsdao-mini-validator.tgz"
 BIN=$(command -v sps-mini-validator) || die "sps-mini-validator not on PATH after npm install"
 sps-mini-validator version
@@ -193,10 +262,12 @@ RestartSec=10
 [Install]
 WantedBy=default.target
 EOF
+    install_smv native systemd
+    systemctl --user daemon-reload
     if [ "$START" = 1 ]; then
-      systemctl --user daemon-reload
-      systemctl --user enable --now sps-mini-validator
-      say "Started. Logs: journalctl --user -u sps-mini-validator -f (enable lingering to run without a login: loginctl enable-linger)"
+      systemctl --user enable sps-mini-validator
+      systemctl --user restart sps-mini-validator
+      say "Started (to keep it running without a login: loginctl enable-linger)"
     fi
     ;;
   Darwin)
@@ -217,13 +288,16 @@ EOF
 </dict>
 </plist>
 EOF
+    install_smv native launchd
     if [ "$START" = 1 ]; then
-      launchctl unload "$PLIST" 2>/dev/null || true
-      launchctl load "$PLIST"
-      say "Started. Logs: tail -f ${STATE_DIR}/sps-mini-validator.log"
+      launchctl bootout "gui/$(id -u)/net.spsdao.mini-validator" 2>/dev/null || true
+      launchctl bootstrap "gui/$(id -u)" "$PLIST"
+      say "Started"
     fi
     ;;
   *)
+    install_smv native none
     say "No service manager support for $(uname -s); run ${CONFIG_DIR}/run.sh"
     ;;
 esac
+done_message

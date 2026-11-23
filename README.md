@@ -1,13 +1,13 @@
 # SPS DAO Mini Validator - _Spud_
 
-A minimal SPS validator, small enough to run on a potato. _Spud_ reimplements the consensus algorithm, checkins, and top validator price feeds.
+A minimal SPS validator, small enough to run on a potato. _Spud_ implements the consensus algorithm, check-ins, and top validator price feeds 100x faster with 100x less disk space.
 
 _Spud_ solves two pain points with the reference validator, [TheSPSDAO/SPS-Validator](https://github.com/TheSPSDAO/SPS-Validator):
 
 1. The installation process requires a lot of disk space
 2. Catching up to head takes a long time
 
-The mini validator does not include a web interface or a block explorer. This causes _Spud_ to run literally 100x faster.
+The mini validator does not include a web interface, a block explorer, or the database needed to power them. These features provide value but are not required to validate blocks. Eliminating them means everything else is faster and smaller.
 
 ## 💿 Installation
 
@@ -21,9 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validat
 
 ### Native Install
 
-Requires Node 24+. Installs `sps-mini-validator`
-
-Native install (Node 24+; installs the `sps-mini-validator` CLI with npm and a systemd user unit or launchd agent):
+Requires Node 24+. Installs `sps-mini-validator` CLI with NPM and a systemd user unit or launchd agent.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validator/main/install.sh | sh -s -- --native-install
@@ -43,8 +41,30 @@ service. With `--accounts` it waits for `VALIDATOR_KEY` to be added to `.env` in
 Everything is installed under `~/.sps-mini-validator`: configuration in `.env` (see Environment),
 seed, checkpoints and snapshots in `data/`, the chunk cache in `cache/`, and logs in `state/`.
 
+### Managing an install: `smv`
+
+The installer also installs `smv` (`~/.sps-mini-validator/bin/smv`, linked from `~/.local/bin/smv`),
+which works the same for Docker, systemd and launchd installs:
+
+| Command                          | Effect                                                                                                               |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `smv status`                     | Service state, release, accounts and the last processed block                                                        |
+| `smv logs [-f] [-n N]`           | Validator logs                                                                                                       |
+| `smv start` / `stop` / `restart` | Control the service                                                                                                  |
+| `smv accounts`                   | Configured accounts and how many posting keys are set (never the keys)                                               |
+| `smv add-account <name>`         | Asks for the posting key without echo, adds it, restarts, reports each account                                       |
+| `smv remove-account <name>`      | Removes the account and restarts                                                                                     |
+| `smv config`                     | Edits `.env`; restarts when it changed                                                                               |
+| `smv version`                    | Installed release and validator version                                                                              |
+| `smv update [--version vX.Y.Z]`  | Runs that release's `install.sh --update` (checksum-verified): keeps `.env` and data, rewrites the service and `smv` |
+| `smv update --check`             | Reports whether a newer release exists                                                                               |
+| `smv uninstall [--purge]`        | Removes the service and `smv`; `--purge` also deletes the install directory                                          |
+
+The install settings (mode, release tag, image) are recorded in `install.conf`, which `smv` and
+`install.sh --update` read.
+
 Releases (`.github/workflows/release.yml`, on tag `v*`): multi-arch image on GHCR, npm tarball,
-`install.sh`, seeds carried forward from the previous release. `scripts/publish-seed.sh <seed>
+`install.sh`, `smv`, seeds carried forward from the previous release. `scripts/publish-seed.sh <seed>
 [--genesis]` verifies a seed and replaces the release's seed assets and `SHA256SUMS`.
 
 ## How it works
