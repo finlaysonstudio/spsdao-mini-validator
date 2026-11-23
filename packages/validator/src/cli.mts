@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * sps-mini: command-line entry for bare-metal installs (the Docker image runs main.mjs directly).
+ * sps-mini: command-line entry for native installs (the Docker image runs main.mjs directly).
  *
  *   sps-mini run                                   follow the chain (configured by environment, see README)
  *   sps-mini export <checkpoint-dir> <out> [block] [--verify]

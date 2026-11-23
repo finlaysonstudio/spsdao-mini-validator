@@ -2,11 +2,11 @@
 # SPS Mini Validator installer.
 #
 #   curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validator/main/install.sh | sh
-#   curl -fsSL .../install.sh | sh -s -- --bare-metal --accounts alice,bob
+#   curl -fsSL .../install.sh | sh -s -- --native-install --accounts alice,bob
 #
 # Options:
 #   --docker            run in Docker (default; image ghcr.io/finlaysonstudio/spsdao-mini-validator)
-#   --bare-metal        install the sps-mini CLI with npm (Node 24+) and a systemd/launchd service
+#   --native-install    install the sps-mini CLI with npm (Node 24+) and a systemd/launchd service
 #   --genesis           start from the genesis seed (block 93703455) and replay to head (hours, ~6 GB
 #                       chunk cache) instead of the latest published seed
 #   --accounts a,b      validator accounts for shadow-mode duties (no keys are read)
@@ -27,7 +27,7 @@ START=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --docker) MODE="docker" ;;
-    --bare-metal) MODE="bare-metal" ;;
+    --native-install) MODE="native" ;;
     --genesis) SEED="genesis" ;;
     --accounts) ACCOUNTS="$2"; shift ;;
     --dir) DIR="$2"; shift ;;
@@ -101,7 +101,7 @@ fi
 if [ "$MODE" = "docker" ]; then
   need docker
   docker compose version >/dev/null 2>&1 || die "docker compose v2 is required"
-  # Paths inside the container are /data; the .env above is for bare metal, so map it here.
+  # Paths inside the container are /data; the .env above is for a native install, so map it here.
   cat > docker-compose.yml <<EOF
 services:
   validator:
@@ -136,7 +136,7 @@ EOF
   exit 0
 fi
 
-# ---------------------------------------------------------------- bare metal
+# ---------------------------------------------------------------- native install
 need node
 need npm
 NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
