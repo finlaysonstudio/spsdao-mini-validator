@@ -20,17 +20,22 @@ export class BlockRepository {
     return n === 0 ? null : n;
   }
 
+  /**
+   * SELECT MAX(block_num) FROM blocks WHERE block_time < date. Only the newest blocks are retained
+   * (a contiguous window ending at the latest block), so the answer is exact whenever the oldest
+   * retained block is already before `date`; otherwise it lies outside the window.
+   */
   getLastBlockNumBefore(date: Date): number | null {
     const latest = this.state.blocks.getLatestBlockNum();
     const earliest = this.state.blocks.getEarliestBlockNum();
-    let best: number | null = null;
-    for (let b = earliest; b <= latest; b++) {
+    const first = this.state.blocks.get(earliest);
+    if (!first || first.block_time >= date) {
+      throw new UnsupportedPathError(`getLastBlockNumBefore(${date.toISOString()}) is outside retained blocks (oldest ${earliest})`);
+    }
+    let best = earliest;
+    for (let b = earliest + 1; b <= latest; b++) {
       const row = this.state.blocks.get(b);
       if (row && row.block_time < date) best = b;
-    }
-    const first = this.state.blocks.get(earliest);
-    if (best === null || (first && first.block_time >= date && best === null)) {
-      throw new UnsupportedPathError(`getLastBlockNumBefore(${date.toISOString()}) is outside retained blocks`);
     }
     return best;
   }

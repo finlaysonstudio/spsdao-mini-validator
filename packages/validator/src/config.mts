@@ -1,3 +1,6 @@
+import { dirname, join } from "node:path";
+import { defaultValidatorVersion } from "./version.mjs";
+
 const env = (key: string, fallback: string): string => process.env[key] ?? fallback;
 const envInt = (key: string, fallback: number): number => {
   const v = process.env[key];
@@ -18,6 +21,8 @@ export const config = {
   stopBlock: envInt("STOP_BLOCK", 0),
   /** Write `block_num l2_block_id` lines here in addition to stdout. */
   hashLog: env("HASH_LOG", ""),
+  /** Progress file for `spud status` (block, head, behind, rate); defaults to status.json beside HASH_LOG. */
+  statusFile: env("STATUS_FILE", process.env.HASH_LOG ? join(dirname(process.env.HASH_LOG), "status.json") : ""),
   /** Keep retrying a failing RPC call (with backoff) this long before it is fatal. */
   rpcRetryDeadlineMs: envInt("RPC_RETRY_DEADLINE_MS", 600000),
   /** Per-request RPC timeout. */
@@ -57,7 +62,7 @@ export const config = {
   enableCheckIns: env("ENABLE_CHECK_INS", "true") === "true",
   checkInRetryBlocks: envInt("CHECK_IN_RETRY_BLOCKS", 100),
   /** Version string sent with validate_block / check_in_validator (recorded on chain as last_version). */
-  validatorVersion: env("VALIDATOR_VERSION", "1.5.1-mini.0"),
+  validatorVersion: env("VALIDATOR_VERSION", defaultValidatorVersion()),
   /** Price feed duty for top validators (upstream PriceFeedPlugin); needs at least one external feed. */
   enablePriceFeed: env("ENABLE_PRICE_FEED", "true") === "true",
   /** Upstream hive_engine_rpc_nodes, in failover order. */

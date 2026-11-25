@@ -6,8 +6,12 @@ import * as S from "../schema.mjs";
 import type { Services } from "../services.mjs";
 import { EventLog, type OperationData } from "../types.mjs";
 import { isSystemAccount } from "../util/accounts.mjs";
-import { ErrorType, UnsupportedPathError, ValidationError } from "../util/errors.mjs";
+import { ErrorType, ValidationError } from "../util/errors.mjs";
+import type { ConfigData } from "../repos/config.mjs";
 import { ACCOUNTS, TOKENS, TokenSupport } from "../repos/context.mjs";
+import type { AutonomousPoolConfiguration } from "../repos/pool_manager.mjs";
+import type { Sale, SaleTransfer } from "../repos/shop.mjs";
+import type { TransitionPointName } from "../repos/transitions.mjs";
 import type { ValidatorEntry } from "../repos/validators.mjs";
 import { Action, AdminAction, type ActionFactory, type ExecutableAction } from "./base.mjs";
 import * as T from "./transitions.mjs";
@@ -39,10 +43,19 @@ class ConfigUpdateAction extends AdminAction<{ updates: { group_name: string; na
   }
   override validate(): boolean {
     super.validate();
-    throw new UnsupportedPathError(`config_update by admin ${this.op.account} at ${this.op.block_num} is not ported`);
+    const errors: string[] = [];
+    for (const update of this.params.updates) {
+      errors.push(...this.svc.config.validateUpdateConfig(update.group_name, update.name, update.value));
+    }
+    if (errors.length > 0) throw this.err(`Config update validation failed. ${errors.join(". ")}`, ErrorType.InvalidConfig);
+    return true;
   }
   process(): EventLog[] {
-    throw new UnsupportedPathError("config_update");
+    const results: EventLog[] = [];
+    for (const update of this.params.updates) {
+      results.push(this.svc.config.reloadingUpdateConfig(update.group_name, update.name, update.value as ConfigData));
+    }
+    return results;
   }
 }
 
@@ -158,27 +171,33 @@ class ReturnTokensAction extends Action<{ token: string; from: string; qty: numb
   }
 }
 
-class ShopPurchaseAction extends Action<{ id: string; qty: number }> {
+class ShopPurchaseAction extends Action<Sale & { id: string }> {
+  private sales: SaleTransfer[] = [];
+  private sale_report: EventLog | undefined = undefined;
   constructor(op: Op, data: unknown, index: number, private readonly svc: Services) {
     super(S.shop_purchase, op, data, index);
   }
   override isSupported() {
+    // Might still use unsupported tokens, but we can only find out later.
     return true;
   }
   validate(): boolean {
-    // Shop.precalculateSale: only `validator_tranche_info` (legacy tranche sale) and config-registered
-    // sales exist. With no dynamic sales configured every other id fails with NoSuchSale.
-    if (this.params.id !== "validator_tranche_info") {
-      const shop = this.svc.config.shop;
-      if (shop && Object.prototype.hasOwnProperty.call(shop, this.params.id)) {
-        throw new UnsupportedPathError(`shop_purchase of configured sale ${this.params.id}`);
-      }
-      throw this.err(`Sale ${this.params.id} does not exist`, ErrorType.NoSuchSale);
+    const calculated = this.svc.shop.precalculateSale(this.op.account, this.params, this);
+    this.sales = calculated.result;
+    this.sale_report = calculated.report;
+    const accounts = this.sales.flatMap((st) => [st.to, st.from]).filter((s) => !s.startsWith("$"));
+    if (!this.svc.hiveAccounts.onlyHiveAccounts(accounts)) {
+      throw this.err("You transfer tokens from or to a non existing Hive account.", ErrorType.AccountNotKnown);
     }
-    throw new UnsupportedPathError("shop_purchase validator_tranche_info is not ported");
+    return true;
   }
   process(): EventLog[] {
-    throw new UnsupportedPathError("shop_purchase");
+    const event_logs: EventLog[] = [];
+    for (const transfer of this.sales) {
+      event_logs.push(...this.svc.balances.updateBalance(this, transfer.from, transfer.to, transfer.token, transfer.amount, this.action_name));
+    }
+    if (this.sale_report) event_logs.push(this.sale_report);
+    return event_logs;
   }
 }
 
@@ -898,31 +917,66 @@ class FulfillPromisesAction extends Action<{ type: string; ids: string[]; metada
 }
 
 // ---------------------------------------------------------------------------
-// pools (admin-only; the PoolManager is not ported — admins never use it now)
+// pools (autonomous inflation pools, apps/sps-validator/src/sps/actions/pools)
 // ---------------------------------------------------------------------------
-class UnsupportedAdminAction extends AdminAction<unknown> {
-  constructor(schema: S.Schema<any>, op: Op, data: unknown, index: number, svc: Services) {
-    super(svc.config, schema, op, data, index);
+class AddPoolAction extends AdminAction<AutonomousPoolConfiguration> {
+  constructor(op: Op, data: unknown, index: number, private readonly svc: Services) {
+    super(svc.config, S.add_pool, op, data, index);
   }
   process(): EventLog[] {
-    throw new UnsupportedPathError(`${this.action_name} by admin is not ported`);
+    return [this.svc.poolManager.add(this.params, this)];
+  }
+}
+
+class UpdatePoolAction extends AdminAction<Partial<AutonomousPoolConfiguration>> {
+  constructor(op: Op, data: unknown, index: number, private readonly svc: Services) {
+    super(svc.config, S.update_pool, op, data, index);
+  }
+  process(): EventLog[] {
+    return [this.svc.poolManager.update(this.params, this)];
+  }
+}
+
+class DisablePoolAction extends AdminAction<{ name: string }> {
+  private static readonly maxDate = new Date(8_640_000_000_000_000);
+  constructor(op: Op, data: unknown, index: number, private readonly svc: Services) {
+    super(svc.config, S.disable_pool, op, data, index);
+  }
+  process(): EventLog[] {
+    const payload = { name: this.params.name, start: DisablePoolAction.maxDate };
+    return [this.svc.poolManager.update(payload, this)];
   }
 }
 
 class ClaimPoolAction extends Action<{ now: Date }> {
-  constructor(op: Op, data: unknown, index?: number) {
+  constructor(op: Op, data: unknown, index: number, private readonly svc: Services) {
     super(S.claim_pool, op, data, index);
   }
   validate() {
     return true;
   }
   process(): EventLog[] {
-    throw new UnsupportedPathError("claim_pool");
+    // Assume this.params.now comes from a deterministic source, such as block time
+    return this.svc.poolManager.payout(this.params.now, this);
   }
 }
 
+type TransitionImpl = (svc: Services, action: Action) => EventLog[];
+
+/**
+ * The five transition actions upstream routes (actions/transitions/*). Upstream has no other
+ * transition action; any other name is not routed (and ignored, as upstream).
+ */
 class TransitionAction extends Action<{ block_num: number }> {
-  constructor(schema: S.Schema<any>, op: Op, data: unknown, index: number, private readonly svc: Services, private readonly point: keyof typeof import("../repos/transitions.mjs").TRANSITION_POINTS) {
+  constructor(
+    schema: S.Schema<any>,
+    op: Op,
+    data: unknown,
+    index: number,
+    private readonly svc: Services,
+    private readonly point: TransitionPointName,
+    private readonly impl: TransitionImpl,
+  ) {
     super(schema, op, data, index);
   }
   override isSupported() {
@@ -932,20 +986,7 @@ class TransitionAction extends Action<{ block_num: number }> {
     return true;
   }
   process(): EventLog[] {
-    switch (this.action_name) {
-      case "transition_fix_vote_weight":
-        return T.fixVoteWeight(this.svc, this);
-      case "transition_cleanup_lite_accounts":
-        return T.cleanupLiteAccounts(this.svc, this);
-      case "transition_balance_token_staking_spsp":
-        return T.balanceTokenStakingAccount(this.svc, this);
-      case "transition_adjust_token_distribution_strategy":
-        return T.adjustTokenDistributionStrategy(this.svc, this);
-      case "transition_cancel_delegation_promises":
-        return T.cancelDelegationPromises(this.svc, this);
-      default:
-        throw new UnsupportedPathError(`transition ${this.action_name}`);
-    }
+    return this.impl(this.svc, this);
   }
 }
 
@@ -990,9 +1031,9 @@ export class ActionRouter {
       { name: "price_feed", factory: f(TopPriceFeedAction), from: priceFeedStart },
       { name: "token_transfer_multi", factory: f(TokenTransferMultiAction) },
       { name: "shop_purchase", factory: f(ShopPurchaseAction) },
-      { name: "add_pool", factory: (op, data, index = 0) => new UnsupportedAdminAction(S.add_pool, op, data, index, svc) },
-      { name: "update_pool", factory: (op, data, index = 0) => new UnsupportedAdminAction(S.update_pool, op, data, index, svc) },
-      { name: "disable_pool", factory: (op, data, index = 0) => new UnsupportedAdminAction(S.disable_pool, op, data, index, svc) },
+      { name: "add_pool", factory: f(AddPoolAction) },
+      { name: "update_pool", factory: f(UpdatePoolAction) },
+      { name: "disable_pool", factory: f(DisablePoolAction) },
       { name: "set_authority", factory: f(SetAuthorityAction) },
       { name: "create_promise", factory: f(LegacyCreatePromiseAction), to: delegationOfferBlock },
       { name: "create_promise", factory: f(CreatePromiseAction), from: delegationOfferBlock },
@@ -1005,23 +1046,28 @@ export class ActionRouter {
       { name: "deactivate_license", factory: f(DeactivateLicenseAction) },
       { name: "check_in_validator", factory: f(CheckInValidatorAction) },
     ];
-    const t = (name: string, schema: S.Schema<any>, point: Parameters<typeof svc.transitions.isTransitionPoint>[0]): Route => ({
+    const t = (name: string, schema: S.Schema<any>, point: TransitionPointName, impl: TransitionImpl): Route => ({
       name,
-      factory: (op, data, index = 0) => new TransitionAction(schema, op, data, index, svc, point),
+      factory: (op, data, index = 0) => new TransitionAction(schema, op, data, index, svc, point, impl),
     });
     this.virtual = [
       { name: "token_unstaking", factory: f(TokenUnstakingAction) },
-      { name: "claim_pool", factory: (op, data, index) => new ClaimPoolAction(op, data, index) },
+      { name: "claim_pool", factory: f(ClaimPoolAction) },
       { name: "burn", factory: f(BurnAction) },
       { name: "expire_promises", factory: f(ExpirePromisesAction) },
       { name: "expire_rental_delegations", factory: f(ExpireRentalDelegationsAction) },
       { name: "expire_check_ins", factory: f(ExpireCheckInsAction) },
       { name: "update_missed_blocks", factory: f(UpdateMissedBlocksAction) },
-      t("transition_fix_vote_weight", S.transition_fix_vote_weight, "fix_vote_weight"),
-      t("transition_cleanup_lite_accounts", S.transition_cleanup_lite_accounts, "validator_transition_cleanup"),
-      t("transition_balance_token_staking_spsp", S.transition_balance_token_staking_spsp, "validator_transition_cleanup"),
-      t("transition_adjust_token_distribution_strategy", S.transition_adjust_token_distribution_strategy, "adjust_token_distribution_strategy"),
-      t("transition_cancel_delegation_promises", S.transition_cancel_delegation_promises, "delegation_offer_block"),
+      t("transition_fix_vote_weight", S.transition_fix_vote_weight, "fix_vote_weight", T.fixVoteWeight),
+      t("transition_cleanup_lite_accounts", S.transition_cleanup_lite_accounts, "validator_transition_cleanup", T.cleanupLiteAccounts),
+      t("transition_balance_token_staking_spsp", S.transition_balance_token_staking_spsp, "validator_transition_cleanup", T.balanceTokenStakingAccount),
+      t(
+        "transition_adjust_token_distribution_strategy",
+        S.transition_adjust_token_distribution_strategy,
+        "adjust_token_distribution_strategy",
+        T.adjustTokenDistributionStrategy,
+      ),
+      t("transition_cancel_delegation_promises", S.transition_cancel_delegation_promises, "delegation_offer_block", T.cancelDelegationPromises),
     ];
   }
 

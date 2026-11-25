@@ -2,7 +2,6 @@ import type { StateStore, ValidatorRow } from "../state/index.mjs";
 import type { BlockRef } from "../types.mjs";
 import { EventLog } from "../types.mjs";
 import { pgCompare } from "../util/collate.mjs";
-import { UnsupportedPathError } from "../util/errors.mjs";
 import { addScaled, formatScaled, numberToScaled, scaledToNumber } from "../util/num.mjs";
 import type { BalanceRepository } from "./balance.mjs";
 import type { ConfigLoader } from "./config.mjs";

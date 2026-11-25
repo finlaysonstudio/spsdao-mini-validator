@@ -49,7 +49,7 @@ which works the same for Docker, systemd and launchd installs:
 
 | Command                           | Effect                                                                                                                |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `spud status`                     | Service state, release, accounts and the last processed block                                                         |
+| `spud status`                     | Service state, release, accounts, the last processed block and whether it is caught up to head                        |
 | `spud logs [-f] [-n N]`           | Validator logs                                                                                                        |
 | `spud start` / `stop` / `restart` | Control the service                                                                                                   |
 | `spud accounts`                   | Configured accounts and how many posting keys are set (never the keys)                                                |
@@ -161,6 +161,7 @@ the database.
 | `REPLAY_BATCH_SIZE`                     | 25               | Blocks fetched in parallel during catch-up         |
 | `BLOCK_CACHE_DIR`                       | (none)           | On-disk cache of raw Hive blocks                   |
 | `HASH_LOG`                              | (none)           | Append `block_num l2_block_id` lines here          |
+| `STATUS_FILE`                           | beside `HASH_LOG`| Progress JSON (block, head, behind, rate) for `spud status` |
 | `STOP_BLOCK`                            | 0                | Stop after this block                              |
 | `CUSTOM_JSON_ID` / `CUSTOM_JSON_PREFIX` | `sm_sps` / `sm_` | Upstream operation ids                             |
 | `SNAPSHOT_DIR`                          | (none)           | Export a portable seed here (see Snapshots)        |
@@ -226,7 +227,7 @@ account. Every `validate_block` and `check_in_validator` transaction is built ex
 | `VALIDATE_BLOCK_DELAY`               | 0                                          | 0 = leader; `N` = follower that waits `N` blocks                                                                                               |
 | `ENABLE_CHECK_INS`                   | `true`                                     | Check in for the listed accounts                                                                                                               |
 | `CHECK_IN_RETRY_BLOCKS`              | 100                                        | Re-send an unconfirmed check-in after this many blocks                                                                                         |
-| `VALIDATOR_VERSION`                  | `1.5.1-mini.0`                             | `version` param (recorded on chain as the validator's `last_version`)                                                                          |
+| `VALIDATOR_VERSION`                  | `1.5.1/spud-v<release>`                    | `version` param (recorded on chain as the validator's `last_version`)                                                                          |
 | `ENABLE_PRICE_FEED`                  | `true`                                     | Price feed duty (runs only for top validators)                                                                                                 |
 | `PRICE_FEED_DAO_API_URL`             | `https://prices.splinterlands.workers.dev` | DAO HIVE/USD feed (no key)                                                                                                                     |
 | `PRICE_FEED_COIN_GECKO_API_KEY`      | (none)                                     | Enables the CoinGecko feed (`PRICE_FEED_COIN_GECKO_API_URL`, `_DEMO_API_URL`, `_DEMO` as upstream)                                             |
@@ -290,12 +291,20 @@ The checker joins the upstream compose network (`validator:postgres`) and reads 
 
 ## Known gaps
 
-Paths that upstream can take but that never occur on the current chain are not ported and
-raise `UnsupportedPathError` (which aborts processing rather than silently diverging):
-`config_update` by an admin, the legacy `validator_tranche_info` shop sale, pool admin
-actions (`add_pool`, `update_pool`, `disable_pool`, `claim_pool`), the legacy admin price feed,
-and the one-time transition actions. `fulfill_promise_multi` is ported but its multi-row
-`RETURNING` order is approximated (never seen on chain).
+Every operation of upstream 1.5.1 is ported, including admin `config_update` (with its config
+validation and reload), the `validator_tranche_info` license sale and configured shop sales, the
+autonomous pool actions (`add_pool`, `update_pool`, `disable_pool`, `claim_pool`), the legacy admin
+price feed and the five transition actions. Remaining limits:
+
+- A staking pool `stop_date_utc` earlier than the oldest retained block (the newest 5000 blocks)
+  cannot be resolved to a block number and stops the node.
+- `fulfill_promise_multi` is ported but its multi-row `RETURNING` order is approximated (never seen
+  on chain).
+
+An action that fails outside validation stops the node with one error line, `operation failed,
+stopping` (or `unsupported operation, stopping` for a path that is not ported), carrying
+`block_num`, `trx_id`, `action`, `account` and `reason`; for example `add_pool` while config has no
+`sps.inflation_pools` row, or a shop sale while no SPS price is known.
 
 Memory: about 0.9 GB RSS after loading the current seed (2.6M Hive account names, 1.4M
 promise ids, 1.5M rental ids are kept as 64-bit hashes).

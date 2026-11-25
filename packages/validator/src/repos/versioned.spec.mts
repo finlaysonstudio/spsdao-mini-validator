@@ -63,6 +63,8 @@ describe("config upsert", () => {
     const ev = svc.config.reloadingUpsertConfig("validator", "object", "consecutive_missed_blocks_threshold", 5);
     expect(ev.event_type).toBe("upsert");
     expect(ev.data).toEqual({ group_name: "validator", group_type: "object", name: "consecutive_missed_blocks_threshold", index: 0, value_type: "number", value: "5", last_updated_date: null, last_updated_tx: null });
-    expect(svc.config.validator?.consecutive_missed_blocks_threshold).toBe(5);
+    expect(svc.config.value.validator.consecutive_missed_blocks_threshold).toBe(5);
+    // a group missing the required validator settings fails the asserter, as upstream
+    expect(svc.config.validator).toBeUndefined();
   });
 });

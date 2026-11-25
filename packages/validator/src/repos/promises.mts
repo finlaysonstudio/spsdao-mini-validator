@@ -2,7 +2,7 @@ import type { PromiseRow, PromiseStatus, StateStore } from "../state/index.mjs";
 import type { BlockRef, ProcessResult } from "../types.mjs";
 import { EventLog } from "../types.mjs";
 import { pgCompare } from "../util/collate.mjs";
-import { ErrorType, UnsupportedPathError, ValidationError } from "../util/errors.mjs";
+import { ErrorType, ValidationError } from "../util/errors.mjs";
 import { jsonbCanonical } from "../util/json.mjs";
 import { warn } from "../util/log.mjs";
 import { Err, Ok, OkVoid, type Result } from "../util/result.mjs";
@@ -132,7 +132,8 @@ export class PromiseRepository {
 
   private live(type: string, ext_id: string): PromiseRow {
     const row = this.state.promises.getLive(type, ext_id);
-    if (!row) throw new UnsupportedPathError(`promise ${type}/${ext_id} is not in the live store`);
+    // Every caller validated the promise as open or fulfilled, which keeps it in the live store.
+    if (!row) throw new Error(`invariant: promise ${type}/${ext_id} is not open or fulfilled`);
     return row;
   }
 

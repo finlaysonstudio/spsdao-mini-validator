@@ -7,8 +7,8 @@
  *   sps-mini-validator verify <seed.ndjson.gz> [--reference <url>]
  *   sps-mini-validator version
  */
-import { readFileSync } from "node:fs";
 import { error } from "./util/log.mjs";
+import { packageVersion } from "./version.mjs";
 
 const USAGE = `usage: sps-mini-validator <run | export | verify | version> [args]
 
@@ -20,8 +20,7 @@ const USAGE = `usage: sps-mini-validator <run | export | verify | version> [args
   version                                    print package and node versions`;
 
 function version(): string {
-  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
-  return pkg.version;
+  return packageVersion();
 }
 
 async function cli(argv: string[]): Promise<number> {

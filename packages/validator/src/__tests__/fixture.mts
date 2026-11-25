@@ -72,6 +72,21 @@ export class TestHelper {
     }
   }
 
+  /** Upstream insertExistingAdmins: upsert `$root.admin_accounts`. */
+  insertExistingAdmins(admins: string[]): void {
+    this.state.config.set({ group_name: "$root", group_type: "object", name: "admin_accounts", index: 0, value_type: "array", value: JSON.stringify(admins), last_updated_date: null, last_updated_tx: null });
+  }
+
+  /** A config row as upstream tests insert it with `insertItem` (no last_updated fields). */
+  insertConfig(group_name: string, name: string, value_type: string, value: string): void {
+    this.state.config.set({ group_name, group_type: "object", name, index: 0, value_type, value, last_updated_date: null, last_updated_tx: null });
+  }
+
+  /** A processed block row (upstream tests insert into `blocks` / update LastBlockCache). */
+  insertBlock(block_num: number, block_time: Date): void {
+    this.state.blocks.set({ block_num, block_id: "", prev_block_id: "", l2_block_id: "", block_time, validator: null, validation_tx: null });
+  }
+
   insertDummyValidator(account_name: string, is_active = true, total_votes = 0, reward_account: string | null = null, consecutive_missed_blocks = 0): void {
     this.state.validators.set({
       account_name,

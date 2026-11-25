@@ -2,6 +2,7 @@ import type { ActionRouter } from "../actions/index.mjs";
 import type { ExecutableAction } from "../actions/base.mjs";
 import type { PrefixOpts } from "../services.mjs";
 import type { BlockRef, CustomJsonPayload, OperationData, Payout, ProcessResult } from "../types.mjs";
+import { OperationError } from "../util/errors.mjs";
 
 const posting_auth_actions = [
   "token_award",
@@ -93,7 +94,14 @@ export class Operation implements OperationData {
   }
 
   process(): void {
-    for (const a of this.actions) a.execute();
+    for (const a of this.actions) {
+      try {
+        a.execute();
+      } catch (err) {
+        if (err instanceof OperationError) throw err;
+        throw new OperationError({ block_num: this.block_num, trx_id: a.unique_trx_id, action: a.id, account: this.account }, err);
+      }
+    }
   }
 
   get trx_op_id(): string {
