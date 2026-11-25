@@ -22,6 +22,8 @@ import { Services } from "./services.mjs";
 import { listCheckpoints, loadCheckpoint, pruneCheckpoints, writeCheckpoint } from "./state/checkpoint.mjs";
 import { StateStore } from "./state/index.mjs";
 import { OperationError } from "./util/errors.mjs";
+import { StatusFile } from "./util/status_file.mjs";
+import { UPSTREAM_VERSION } from "./version.mjs";
 import { error, log, logStatus, warn } from "./util/log.mjs";
 import { LiveBroadcaster, parseKeys, resolveSigners } from "./validator/broadcast.mjs";
 import { configuredFeeds, HiveEngine, PriceFeedDuty } from "./validator/price_feed.mjs";
@@ -99,6 +101,10 @@ async function makeDuties(svc: Services): Promise<Duties | null> {
 }
 
 async function main() {
+  const statusFile = new StatusFile(config.statusFile, {
+    info: { upstream_version: UPSTREAM_VERSION, validator_version: config.validatorVersion, role: null, validate_block_delay: config.validateBlockDelay },
+  });
+  statusFile.start();
   log("validator starting", {
     node: process.version,
     seed_file: config.seedFile,
@@ -113,6 +119,7 @@ async function main() {
   const processor = new BlockProcessor(svc);
   const ref = config.referenceApi ? new ReferenceApi(config.referenceApi) : null;
   const duties = await makeDuties(svc);
+  statusFile.setInfo({ role: duties ? duties.duties.role : null });
 
   // Hashes since the last verified block, for bisecting a mismatch.
   let lastVerified = verified ? startBlock : 0;
@@ -184,6 +191,7 @@ async function main() {
       });
     }
     if (config.hashLog) appendFileSync(config.hashLog, `${blockNum} ${result.l2_block_id}\n`);
+    statusFile.update({ block_num: blockNum, head_block: headBlock, rate: r });
     duties?.duties.onBlock({ block_num: blockNum, l2_block_id: result.l2_block_id, validator: result.validator, transactions: result.transactions, head_block: headBlock });
     duties?.priceFeed?.onBlock({ block_num: blockNum, head_block: headBlock });
 

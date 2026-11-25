@@ -49,7 +49,7 @@ which works the same for Docker, systemd and launchd installs:
 
 | Command                           | Effect                                                                                                                |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `spud status`                     | Service state, release, accounts and the last processed block                                                         |
+| `spud status`                     | Service state, release, accounts, the last processed block and whether it is caught up to head                        |
 | `spud logs [-f] [-n N]`           | Validator logs                                                                                                        |
 | `spud start` / `stop` / `restart` | Control the service                                                                                                   |
 | `spud accounts`                   | Configured accounts and how many posting keys are set (never the keys)                                                |
@@ -161,6 +161,7 @@ the database.
 | `REPLAY_BATCH_SIZE`                     | 25               | Blocks fetched in parallel during catch-up         |
 | `BLOCK_CACHE_DIR`                       | (none)           | On-disk cache of raw Hive blocks                   |
 | `HASH_LOG`                              | (none)           | Append `block_num l2_block_id` lines here          |
+| `STATUS_FILE`                           | beside `HASH_LOG`| Progress JSON (block, head, behind, rate) for `spud status` |
 | `STOP_BLOCK`                            | 0                | Stop after this block                              |
 | `CUSTOM_JSON_ID` / `CUSTOM_JSON_PREFIX` | `sm_sps` / `sm_` | Upstream operation ids                             |
 | `SNAPSHOT_DIR`                          | (none)           | Export a portable seed here (see Snapshots)        |
@@ -226,7 +227,7 @@ account. Every `validate_block` and `check_in_validator` transaction is built ex
 | `VALIDATE_BLOCK_DELAY`               | 0                                          | 0 = leader; `N` = follower that waits `N` blocks                                                                                               |
 | `ENABLE_CHECK_INS`                   | `true`                                     | Check in for the listed accounts                                                                                                               |
 | `CHECK_IN_RETRY_BLOCKS`              | 100                                        | Re-send an unconfirmed check-in after this many blocks                                                                                         |
-| `VALIDATOR_VERSION`                  | `1.5.1-mini.0`                             | `version` param (recorded on chain as the validator's `last_version`)                                                                          |
+| `VALIDATOR_VERSION`                  | `1.5.1/spud-v<release>`                    | `version` param (recorded on chain as the validator's `last_version`)                                                                          |
 | `ENABLE_PRICE_FEED`                  | `true`                                     | Price feed duty (runs only for top validators)                                                                                                 |
 | `PRICE_FEED_DAO_API_URL`             | `https://prices.splinterlands.workers.dev` | DAO HIVE/USD feed (no key)                                                                                                                     |
 | `PRICE_FEED_COIN_GECKO_API_KEY`      | (none)                                     | Enables the CoinGecko feed (`PRICE_FEED_COIN_GECKO_API_URL`, `_DEMO_API_URL`, `_DEMO` as upstream)                                             |

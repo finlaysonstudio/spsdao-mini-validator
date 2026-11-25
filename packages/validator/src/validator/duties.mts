@@ -14,6 +14,7 @@
 import { sha256 } from "js-sha256";
 import type { Services } from "../services.mjs";
 import type { TransactionEntity } from "../types.mjs";
+import { defaultValidatorVersion } from "../version.mjs";
 
 export type DutyAction = "validate_block" | "check_in_validator";
 
@@ -48,7 +49,6 @@ type Intent = { account: string; block_num: number; hash: string; sent_at: numbe
 type PendingValidation = { account: string; block_num: number; hash: string; submit_after: number };
 type CheckInSent = { last_check_in_block_num: number | null; sent_at: number; block_num: number; hash: string };
 
-const DEFAULT_VERSION = "1.5.1-mini.0";
 
 /** Fire Horse getDeterministicJitter: reproducible across restarts and nodes. */
 export function checkInJitter({ account, lastCheckInBlock, window }: { account: string; lastCheckInBlock: number; window: number }): number {
@@ -73,7 +73,7 @@ export class ValidatorDuties {
   /** last check-in sent per reward account */
   private readonly checkInsSent = new Map<string, CheckInSent>();
 
-  constructor({ svc, accounts, broadcaster, emit, version = DEFAULT_VERSION, validateBlockDelay = 0, enableCheckIns = true, checkInRetryBlocks = 100 }: DutiesOptions) {
+  constructor({ svc, accounts, broadcaster, emit, version = defaultValidatorVersion(), validateBlockDelay = 0, enableCheckIns = true, checkInRetryBlocks = 100 }: DutiesOptions) {
     this.svc = svc;
     this.accounts = [...new Set(accounts.map((a) => a.trim()).filter(Boolean))];
     this.accountSet = new Set(this.accounts);
