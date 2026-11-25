@@ -1,6 +1,6 @@
 {
   "name": "@spsdao/mini-validator",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Minimal SPS validator: replays Hive blocks in memory, computes L2 block hashes and performs validator duties",
   "type": "module",
