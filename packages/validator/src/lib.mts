@@ -1,8 +1,8 @@
 /**
  * Library surface for embedding the validator (for example in a scheduled Lambda that replays a
  * range of blocks and persists the state elsewhere). Everything a host needs to load state,
- * replay, verify, persist and perform validator duties is exported here, so hosts depend on one entry point rather than
- * on the source layout.
+ * replay, verify, persist and perform validator duties is exported here, so hosts depend on one
+ * entry point rather than on the source layout.
  */
 export { BlockProcessor, type ProcessedBlock } from "./block/processor.mjs";
 export {
@@ -30,6 +30,7 @@ export {
 } from "./state/checkpoint.mjs";
 export { StateStore } from "./state/index.mjs";
 export { deterministicPow } from "./util/pow.mjs";
+export { defaultValidatorVersion, UPSTREAM_VERSION } from "./version.mjs";
 export {
   LiveBroadcaster,
   parseKeys,
