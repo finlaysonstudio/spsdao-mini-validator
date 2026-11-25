@@ -1,4 +1,4 @@
-# SPS DAO Mini Validator - _Spud_ 🥔
+# Spud, the SPS mini validator 🥔
 
 A minimal SPS validator, small enough to run on a potato. 
 
@@ -16,35 +16,37 @@ The mini validator does not include a web interface, a block explorer, or the da
 Using Docker is still the default and recommended way to run a validator:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validator/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/spudsps/spudsps-validator/main/install.sh | sh
 ```
 
 ### Native Install
 
-Requires Node 24+. Installs `sps-mini-validator` CLI with NPM and a systemd user unit or launchd agent.
+Requires Node 24+. Installs `spudsps` CLI with NPM and a systemd user unit or launchd agent.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validator/main/install.sh | sh -s -- --native-install
+curl -fsSL https://raw.githubusercontent.com/spudsps/spudsps-validator/main/install.sh | sh -s -- --native-install
 ```
 
 | Option             | Effect                                                                                  |
 | ------------------ | --------------------------------------------------------------------------------------- |
 | `--accounts a,b`   | Validator accounts to perform duties for; set `VALIDATOR_KEY` in `.env` before starting |
 | `--genesis`        | Start from the genesis seed (block 93703455) and replay to head                         |
-| `--dir DIR`        | Install directory (default `~/.sps-mini-validator`)                                     |
+| `--dir DIR`        | Install directory (default `~/.spudsps`)                                     |
 | `--version vX.Y.Z` | Release tag (default latest)                                                            |
 | `--no-start`       | Write files only                                                                        |
 | `--no-auto-update` | Do not schedule the daily update                                                        |
 
 The installer downloads `seed-latest.ndjson.gz` (or `seed-genesis.ndjson.gz`) from the GitHub
 release, checks it against the release's `SHA256SUMS`, writes `.env` (mode 600) and starts the
-service. With `--accounts` it waits for `VALIDATOR_KEY` to be added to `.env` instead of starting. `sps-mini-validator verify <seed>` also checks a seed's hash against the Splinterlands archive API.
-Everything is installed under `~/.sps-mini-validator`: configuration in `.env` (see Environment),
+service. With `--accounts` it waits for `VALIDATOR_KEY` to be added to `.env` instead of starting. `spudsps verify <seed>` also checks a seed's hash against the Splinterlands archive API.
+Everything is installed under `~/.spudsps`: configuration in `.env` (see Environment),
 seed, checkpoints and snapshots in `data/`, the chunk cache in `cache/`, and logs in `state/`.
+Installs from 0.3.x and earlier (`~/.sps-mini-validator`) move to `~/.spudsps` on their next
+`spud update`; the old path stays as a symlink and `.env` and data are kept.
 
 ### Managing an install: `spud`
 
-The installer also installs `spud` (`~/.sps-mini-validator/bin/spud`, linked from `~/.local/bin/spud`),
+The installer also installs `spud` (`~/.spudsps/bin/spud`, linked from `~/.local/bin/spud`),
 which works the same for Docker, systemd and launchd installs:
 
 | Command                           | Effect                                                                                                                |
@@ -178,7 +180,7 @@ instead of an upstream database or the genesis replay.
   64-bit hashes), `hive_account_authority` and `promise_closed_tables`. Rows keep each store's
   iteration order. Unlike checkpoints (`.v8.gz`, V8 serialization of this build's classes), seeds
   are independent of the Node version and of internal field layout.
-- An install writes snapshots to `~/.sps-mini-validator/data/snapshots` every 28800 blocks (about
+- An install writes snapshots to `~/.spudsps/data/snapshots` every 28800 blocks (about
   a day, on multiples of `SNAPSHOT_EVERY`) and keeps the newest 3 (`SNAPSHOT_KEEP`).
 - With `SNAPSHOT_DIR` set, the runner writes `seed-<block>.ndjson.gz`, `seed-<block>.manifest.json`
   (`block_num`, `l2_block_id`, `bytes`, `sha256`, ...) and `latest.json`. With `REFERENCE_API` set,

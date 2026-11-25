@@ -1,6 +1,6 @@
 {
-  "name": "@spsdao/mini-validator-repo",
-  "version": "0.3.1",
+  "name": "@spudsps/validator-repo",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "workspaces": [

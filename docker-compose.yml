@@ -1,7 +1,7 @@
 services:
   validator:
     build: .
-    container_name: spsdao-mini-validator
+    container_name: spudsps-validator
     restart: unless-stopped
     environment:
       SEED_FILE: /data/seed.ndjson.gz
@@ -37,7 +37,7 @@ services:
   # Needs var/checker.env (PGUSER/PGPASSWORD): run scripts/make-checker-env.sh first.
   checker:
     build: .
-    container_name: spsdao-mini-checker
+    container_name: spudsps-checker
     restart: unless-stopped
     command: ["node", "packages/validator/dist/check.mjs"]
     environment:
@@ -72,8 +72,8 @@ services:
     build:
       context: .
       target: dev
-    image: spsdao-mini-validator:dev
-    container_name: spsdao-mini-genesis
+    image: spudsps-validator:dev
+    container_name: spudsps-genesis
     working_dir: /app/packages/validator
     command: ["node", "--max-old-space-size=4096", "dist/main.mjs"]
     restart: "no"

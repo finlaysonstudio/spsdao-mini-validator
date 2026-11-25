@@ -1,17 +1,17 @@
 #!/bin/sh
-# SPS Mini Validator installer.
+# Spud, the SPS mini validator: installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/finlaysonstudio/spsdao-mini-validator/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/spudsps/spudsps-validator/main/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- --native-install --accounts alice,bob
 #
 # Options:
-#   --docker            run in Docker (default; image ghcr.io/finlaysonstudio/spsdao-mini-validator)
-#   --native-install    install the sps-mini-validator CLI with npm (Node 24+) and a systemd/launchd service
+#   --docker            run in Docker (default; image ghcr.io/spudsps/spudsps-validator)
+#   --native-install    install the spudsps CLI with npm (Node 24+) and a systemd/launchd service
 #   --genesis           start from the genesis seed (block 93703455) and replay to head (hours, ~6 GB
 #                       chunk cache) instead of the latest published seed
 #   --accounts a,b      validator accounts to perform duties for; add their posting key(s) as
 #                       VALIDATOR_KEY in <dir>/.env before starting
-#   --dir DIR           install directory (default ~/.sps-mini-validator)
+#   --dir DIR           install directory (default ~/.spudsps)
 #   --version TAG       release tag (default: latest)
 #   --no-start          write files without starting
 #   --no-auto-update    do not schedule the daily update (`spud auto-update on` turns it on later)
@@ -25,12 +25,13 @@
 #   state/   hashes.log, duties.log, service log
 set -eu
 
-REPO="finlaysonstudio/spsdao-mini-validator"
-IMAGE="${SPS_MINI_IMAGE:-ghcr.io/finlaysonstudio/spsdao-mini-validator}"
+REPO="spudsps/spudsps-validator"
+: "${SPUDSPS_IMAGE:=${SPS_MINI_IMAGE:-}}" "${SPUDSPS_RELEASE_BASE:=${SPS_MINI_RELEASE_BASE:-}}"
+IMAGE="${SPUDSPS_IMAGE:-ghcr.io/spudsps/spudsps-validator}"
 MODE="docker"
 SEED="latest"
 ACCOUNTS=""
-DIR="${HOME}/.sps-mini-validator"
+DIR="${HOME}/.spudsps"
 VERSION="latest"
 START=1
 UPDATE=0
@@ -57,6 +58,72 @@ say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
 
+# ---------------------------------------------------------------- legacy (0.3.x and earlier)
+# Releases before 0.4.0 installed to ~/.sps-mini-validator as finlaysonstudio/spsdao-mini-validator
+# (service sps-mini-validator, launchd label net.spsdao.mini-validator). Move such an install to
+# ~/.spudsps, keep a symlink at the old path (an older spud running this update execs through it),
+# and remove the old service and auto-update scheduler. .env and data are kept.
+LEGACY_DIR="${HOME}/.sps-mini-validator"
+LEGACY_REPO="finlaysonstudio/spsdao-mini-validator"
+LEGACY_IMAGE="ghcr.io/finlaysonstudio/spsdao-mini-validator"
+DEFAULT_DIR="${HOME}/.spudsps"
+legacy_get() { sed -n "s/^$1='\(.*\)'\$/\1/p" "$LEGACY_DIR/install.conf"; }
+migrate_legacy() {
+  [ ! -e "$DEFAULT_DIR" ] || die "both $LEGACY_DIR and $DEFAULT_DIR exist; move one aside and run again"
+  say "Moving ${LEGACY_DIR} to ${DEFAULT_DIR}"
+  l_service=$(legacy_get SERVICE)
+  l_unit=$(legacy_get UNIT)
+  l_label=$(legacy_get LABEL)
+  l_plist=$(legacy_get PLIST)
+  case "$l_service" in
+    docker) (cd "$LEGACY_DIR" && docker compose down) || true ;;
+    systemd)
+      systemctl --user disable --now "${l_unit:-sps-mini-validator}" 2>/dev/null || true
+      rm -f "${HOME}/.config/systemd/user/${l_unit:-sps-mini-validator}.service" ;;
+    launchd)
+      launchctl bootout "gui/$(id -u)/${l_label:-net.spsdao.mini-validator}" 2>/dev/null || true
+      [ -n "$l_plist" ] && rm -f "$l_plist" ;;
+  esac
+  # Old auto-update scheduler. A scheduled run of the old spud may be running this script, so a
+  # loaded launchd job is left loaded (it runs the new spud through the symlink until next login).
+  if [ -z "${SPUD_AUTO:-}" ]; then
+    launchctl bootout "gui/$(id -u)/net.spsdao.mini-validator.update" 2>/dev/null || true
+  fi
+  rm -f "${HOME}/Library/LaunchAgents/net.spsdao.mini-validator.update.plist"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user disable sps-mini-validator-update.timer >/dev/null 2>&1 || true
+    rm -f "${HOME}/.config/systemd/user/sps-mini-validator-update.service" \
+      "${HOME}/.config/systemd/user/sps-mini-validator-update.timer"
+    systemctl --user daemon-reload 2>/dev/null || true
+  fi
+  if command -v crontab >/dev/null 2>&1 && crontab -l 2>/dev/null | grep -qF "# sps-mini-validator auto-update $LEGACY_DIR"; then
+    crontab -l 2>/dev/null | grep -vF "# sps-mini-validator auto-update $LEGACY_DIR" | crontab -
+  fi
+  if [ "$(legacy_get MODE)" = native ] && command -v npm >/dev/null 2>&1; then
+    npm uninstall --global @spsdao/mini-validator >/dev/null 2>&1 || true
+  fi
+  mv "$LEGACY_DIR" "$DEFAULT_DIR"
+  ln -s "$DEFAULT_DIR" "$LEGACY_DIR"
+  # Absolute paths in .env and the recorded repo/image follow the move.
+  for f in "$DEFAULT_DIR/.env" "$DEFAULT_DIR/install.conf"; do
+    [ -f "$f" ] || continue
+    sed -e "s#${LEGACY_DIR}/#${DEFAULT_DIR}/#g" -e "s#${LEGACY_DIR}'#${DEFAULT_DIR}'#g" \
+      -e "s#${LEGACY_IMAGE}#ghcr.io/${REPO}#g" -e "s#${LEGACY_REPO}#${REPO}#g" "$f" > "$f.new"
+    chmod 600 "$f.new"
+    mv "$f.new" "$f"
+  done
+  rm -f "$DEFAULT_DIR/run.sh" "$DEFAULT_DIR/cache/spsdao-mini-validator.tgz"
+  [ -L "$HOME/.local/bin/spud" ] && [ "$(readlink "$HOME/.local/bin/spud")" = "$LEGACY_DIR/bin/spud" ] && rm -f "$HOME/.local/bin/spud"
+  DIR="$DEFAULT_DIR"
+}
+if [ "$DIR" = "$LEGACY_DIR" ] || [ "$DIR" = "$DEFAULT_DIR" ]; then
+  if [ -d "$LEGACY_DIR" ] && [ ! -L "$LEGACY_DIR" ] && [ -f "$LEGACY_DIR/install.conf" ]; then
+    migrate_legacy
+  elif [ -L "$LEGACY_DIR" ]; then
+    DIR="$DEFAULT_DIR"
+  fi
+fi
+
 CONFIG_DIR="$DIR"
 DATA_DIR="$DIR/data"
 CACHE_DIR="$DIR/cache"
@@ -71,18 +138,18 @@ if [ "$UPDATE" = 1 ]; then
   MODE=$(conf_get MODE)
   SEED_ASSET=$(conf_get SEED_ASSET)
   RECORDED_BASE=$(conf_get RELEASE_BASE)
-  [ -z "${SPS_MINI_RELEASE_BASE:-}" ] && [ -n "$RECORDED_BASE" ] && SPS_MINI_RELEASE_BASE=$RECORDED_BASE
+  [ -z "${SPUDSPS_RELEASE_BASE:-}" ] && [ -n "$RECORDED_BASE" ] && SPUDSPS_RELEASE_BASE=$RECORDED_BASE
   RECORDED_IMAGE=$(conf_get IMAGE)
-  [ -z "${SPS_MINI_IMAGE:-}" ] && [ -n "$RECORDED_IMAGE" ] && IMAGE=$RECORDED_IMAGE
+  [ -z "${SPUDSPS_IMAGE:-}" ] && [ -n "$RECORDED_IMAGE" ] && IMAGE=$RECORDED_IMAGE
   [ -n "$MODE" ] || die "install.conf does not record the install mode"
 fi
 # Mirror of the release assets (testing, air-gapped installs).
-RELEASE_BASE="${SPS_MINI_RELEASE_BASE:-}"
+RELEASE_BASE="${SPUDSPS_RELEASE_BASE:-}"
 if [ "$VERSION" != "latest" ]; then
   TAG="$VERSION"
 elif [ -z "$RELEASE_BASE" ]; then
   # Pin "latest" to its tag so every asset and the image come from the same release.
-  TAG=$(curl -fsSI -o /dev/null -w '%{redirect_url}' "https://github.com/${REPO}/releases/latest" 2>/dev/null | sed -n 's#.*/releases/tag/##p')
+  TAG=$(curl -fsSIL -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest" 2>/dev/null | sed -n 's#.*/releases/tag/##p')
   [ -n "$TAG" ] || TAG="latest"
 else
   # A mirror names its release in RELEASE.
@@ -145,8 +212,8 @@ install_spud() { # install_spud <mode> <service>: bin/spud, install.conf and ~/.
     echo "SEED_ASSET=$(q "$SEED_ASSET")"
     echo "RELEASE_BASE=$(q "$RELEASE_BASE")"
     echo "BIN=$(q "${BIN:-}")"
-    echo "UNIT=$(q "sps-mini-validator")"
-    echo "LABEL=$(q "net.spsdao.mini-validator")"
+    echo "UNIT=$(q "spudsps")"
+    echo "LABEL=$(q "com.spudsps.validator")"
     echo "PLIST=$(q "${PLIST:-}")"
   } > "$CONFIG_DIR/install.conf.new"
   mv "$CONFIG_DIR/install.conf.new" "$CONFIG_DIR/install.conf"
@@ -173,7 +240,7 @@ done_message() {
 # ---------------------------------------------------------------- config
 if [ ! -f .env ]; then
   cat > .env <<EOF
-# SPS Mini Validator configuration (see the README "Environment" table).
+# Spud configuration (see the README "Environment" table).
 SEED_FILE=${DATA_DIR}/${SEED_ASSET}
 CHECKPOINT_DIR=${DATA_DIR}/checkpoints
 CHECKPOINT_EVERY=1000
@@ -203,10 +270,11 @@ if [ "$MODE" = "docker" ]; then
   docker compose version >/dev/null 2>&1 || die "docker compose v2 is required"
   # Paths inside the container are /data, /cache and /state; the .env above is for a native install, so map it here.
   cat > docker-compose.yml <<EOF
+name: spudsps
 services:
   validator:
     image: ${IMAGE}:${TAG}
-    container_name: sps-mini-validator
+    container_name: spudsps
     restart: unless-stopped
     env_file: .env
     environment:
@@ -245,12 +313,12 @@ need node
 need npm
 NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
 [ "$NODE_MAJOR" -ge 24 ] || die "Node 24 or newer is required (found $(node -v))"
-say "Installing sps-mini-validator (${TAG}) with npm"
-fetch "spsdao-mini-validator.tgz" "$CACHE_DIR/spsdao-mini-validator.tgz"
-verify "spsdao-mini-validator.tgz" "$CACHE_DIR/spsdao-mini-validator.tgz"
-npm install --global "$CACHE_DIR/spsdao-mini-validator.tgz"
-BIN=$(command -v sps-mini-validator) || die "sps-mini-validator not on PATH after npm install"
-sps-mini-validator version
+say "Installing spudsps (${TAG}) with npm"
+fetch "spudsps.tgz" "$CACHE_DIR/spudsps.tgz"
+verify "spudsps.tgz" "$CACHE_DIR/spudsps.tgz"
+npm install --global "$CACHE_DIR/spudsps.tgz"
+BIN=$(command -v spudsps) || die "spudsps not on PATH after npm install"
+spudsps version
 
 cat > run.sh <<EOF
 #!/bin/sh
@@ -266,9 +334,9 @@ case "$(uname -s)" in
   Linux)
     need systemctl
     mkdir -p "${HOME}/.config/systemd/user"
-    cat > "${HOME}/.config/systemd/user/sps-mini-validator.service" <<EOF
+    cat > "${HOME}/.config/systemd/user/spudsps.service" <<EOF
 [Unit]
-Description=SPS Mini Validator
+Description=Spud, the SPS mini validator
 After=network-online.target
 
 [Service]
@@ -282,32 +350,32 @@ EOF
     install_spud native systemd
     systemctl --user daemon-reload
     if [ "$START" = 1 ]; then
-      systemctl --user enable sps-mini-validator
-      systemctl --user restart sps-mini-validator
+      systemctl --user enable spudsps
+      systemctl --user restart spudsps
       say "Started (to keep it running without a login: loginctl enable-linger)"
     fi
     ;;
   Darwin)
-    PLIST="${HOME}/Library/LaunchAgents/net.spsdao.mini-validator.plist"
+    PLIST="${HOME}/Library/LaunchAgents/com.spudsps.validator.plist"
     mkdir -p "${HOME}/Library/LaunchAgents"
     cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>net.spsdao.mini-validator</string>
+  <key>Label</key><string>com.spudsps.validator</string>
   <key>ProgramArguments</key><array><string>${CONFIG_DIR}/run.sh</string></array>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(dirname "$(command -v node)"):/usr/bin:/bin</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>${STATE_DIR}/sps-mini-validator.log</string>
-  <key>StandardErrorPath</key><string>${STATE_DIR}/sps-mini-validator.log</string>
+  <key>StandardOutPath</key><string>${STATE_DIR}/spudsps.log</string>
+  <key>StandardErrorPath</key><string>${STATE_DIR}/spudsps.log</string>
 </dict>
 </plist>
 EOF
     install_spud native launchd
     if [ "$START" = 1 ]; then
-      launchctl bootout "gui/$(id -u)/net.spsdao.mini-validator" 2>/dev/null || true
+      launchctl bootout "gui/$(id -u)/com.spudsps.validator" 2>/dev/null || true
       launchctl bootstrap "gui/$(id -u)" "$PLIST"
       say "Started"
     fi

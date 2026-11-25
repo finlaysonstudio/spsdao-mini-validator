@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * sps-mini-validator: command-line entry for native installs (the Docker image runs main.mjs directly).
+ * spudsps: command-line entry for native installs (the Docker image runs main.mjs directly).
  *
- *   sps-mini-validator run                         follow the chain (configured by environment, see README)
- *   sps-mini-validator export <checkpoint-dir> <out> [block] [--verify]
- *   sps-mini-validator verify <seed.ndjson.gz> [--reference <url>]
- *   sps-mini-validator version
+ *   spudsps run                         follow the chain (configured by environment, see README)
+ *   spudsps export <checkpoint-dir> <out> [block] [--verify]
+ *   spudsps verify <seed.ndjson.gz> [--reference <url>]
+ *   spudsps version
  */
 import { error } from "./util/log.mjs";
 import { packageVersion } from "./version.mjs";
 
-const USAGE = `usage: sps-mini-validator <run | export | verify | version> [args]
+const USAGE = `usage: spudsps <run | export | verify | version> [args]
 
   run                                        follow the chain; configured by environment (README)
   export <checkpoint-dir> <out> [block] [--verify]
@@ -35,7 +35,7 @@ async function cli(argv: string[]): Promise<number> {
       return (await import("./commands/verify.mjs")).verifyCommand(rest);
     case "version":
     case "--version":
-      console.log(`sps-mini-validator ${version()} (node ${process.version})`);
+      console.log(`spudsps ${version()} (node ${process.version})`);
       return 0;
     default:
       console.error(USAGE);

@@ -4,7 +4,7 @@
  * Extract a seed file from a running SPS-Validator PostgreSQL database.
  *
  * Run from the SPS-Validator repo root (where docker-compose.yml lives):
- *   node /path/to/spsdao-mini-validator/scripts/extract-seed.mjs [block_num] [hash_count]
+ *   node /path/to/spudsps-validator/scripts/extract-seed.mjs [block_num] [hash_count]
  *
  * Arguments:
  *   block_num   — snapshot block (default: latest block in DB)
@@ -281,7 +281,7 @@ async function main() {
     writer.writeKeyValue("_meta", {
       extracted_at: new Date().toISOString(),
       source_db: `${connConfig.host}:${connConfig.port}/${connConfig.database}`,
-      description: "SPS Validator state snapshot for mini-validator bootstrap",
+      description: "SPS Validator state snapshot for Spud bootstrap",
     });
     writer.writeKeyValue("block_num", block.block_num);
     writer.writeKeyValue("l2_block_id", block.l2_block_id);
@@ -511,7 +511,7 @@ async function main() {
     console.log(`\nWrote ${outPath} (${writer.sizeMB} MB)`);
     console.log(`  Snapshot block: ${blockNum}`);
     console.log(`  Verification hashes: ${khCount} blocks (${blockNum + 1}–${blockNum + khCount})`);
-    console.log(`\nCopy seed.json to your mini-validator directory and run: npm run dev`);
+    console.log(`\nCopy seed.json to your spudsps-validator directory and run: npm run dev`);
   } finally {
     await client.end();
   }
