@@ -1,5 +1,5 @@
 #!/bin/sh
-# spud: manage an SPS Mini Validator installation. Written to <dir>/bin/spud by install.sh, which also
+# spud: manage a Spud (SPS mini validator) installation. Written to <dir>/bin/spud by install.sh, which also
 # records the install settings in <dir>/install.conf; `spud update` re-runs the release's installer.
 set -eu
 
@@ -99,7 +99,7 @@ svc_restart() {
 svc_state() {
   case "$SERVICE" in
     docker)
-      s=$(docker inspect -f '{{.State.Status}} (since {{.State.StartedAt}})' sps-mini-validator 2>/dev/null) || s="not created"
+      s=$(docker inspect -f '{{.State.Status}} (since {{.State.StartedAt}})' spudsps 2>/dev/null) || s="not created"
       echo "$s" ;;
     systemd) systemctl --user is-active "$UNIT" 2>/dev/null || true ;;
     launchd)
@@ -264,7 +264,7 @@ cmd_logs() {
   case "$SERVICE" in
     docker) dc logs --no-log-prefix --tail "$n" ${follow:+-f} validator ;;
     systemd) journalctl --user -u "$UNIT" -n "$n" ${follow:+-f} ;;
-    *) tail -n "$n" ${follow:+-f} "$STATE_DIR/sps-mini-validator.log" ;;
+    *) tail -n "$n" ${follow:+-f} "$STATE_DIR/spudsps.log" ;;
   esac
 }
 
@@ -406,7 +406,7 @@ latest_tag() {
   if [ -n "${RELEASE_BASE:-}" ]; then
     curl -fsSL "$RELEASE_BASE/RELEASE" 2>/dev/null | head -n 1 | tr -d '[:space:]'
   else
-    curl -fsSI -o /dev/null -w '%{redirect_url}' "https://github.com/${REPO}/releases/latest" 2>/dev/null | sed -n 's#.*/releases/tag/##p'
+    curl -fsSIL -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest" 2>/dev/null | sed -n 's#.*/releases/tag/##p'
   fi
 }
 
@@ -414,7 +414,7 @@ cmd_version() {
   printf 'install   %s (%s, %s)\n' "$TAG" "$MODE" "$DIR"
   case "$MODE" in
     docker)
-      image=$(docker inspect -f '{{.Image}}' sps-mini-validator 2>/dev/null || true)
+      image=$(docker inspect -f '{{.Image}}' spudsps 2>/dev/null || true)
       v=""
       [ -n "$image" ] && v=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image" 2>/dev/null || true)
       printf 'image     %s%s\n' "$IMAGE:$TAG" "${v:+ ($v)}" ;;
@@ -468,11 +468,11 @@ cmd_update() {
 UPDATE_LOG="$STATE_DIR/update.log"
 ROLLBACK="$DIR/cache/rollback"
 LOCK="$DIR/cache/update.lock"
-AU_LABEL="net.spsdao.mini-validator.update"
+AU_LABEL="com.spudsps.validator.update"
 AU_PLIST="$HOME/Library/LaunchAgents/$AU_LABEL.plist"
-AU_UNIT="sps-mini-validator-update"
+AU_UNIT="spudsps-update"
 AU_SYSTEMD="$HOME/.config/systemd/user"
-AU_MARK="# sps-mini-validator auto-update $DIR"
+AU_MARK="# spudsps auto-update $DIR"
 
 # ulog <message>: append to state/update.log (and print, unless run by the scheduler).
 ulog() {
@@ -497,7 +497,7 @@ save_rollback() {
   mkdir -p "$ROLLBACK"
   cp "$DIR/install.conf" "$DIR/bin/spud" "$ROLLBACK/"
   [ -f "$DIR/docker-compose.yml" ] && cp "$DIR/docker-compose.yml" "$ROLLBACK/"
-  [ -f "$DIR/cache/spsdao-mini-validator.tgz" ] && cp "$DIR/cache/spsdao-mini-validator.tgz" "$ROLLBACK/"
+  [ -f "$DIR/cache/spudsps.tgz" ] && cp "$DIR/cache/spudsps.tgz" "$ROLLBACK/"
   return 0
 }
 
@@ -506,9 +506,9 @@ rollback() {
   [ -f "$ROLLBACK/install.conf" ] || { ulog "rollback to $2 failed: nothing saved in $ROLLBACK"; return 1; }
   cp "$ROLLBACK/install.conf" "$DIR/install.conf"
   [ -f "$ROLLBACK/docker-compose.yml" ] && cp "$ROLLBACK/docker-compose.yml" "$DIR/docker-compose.yml"
-  if [ "$MODE" = native ] && [ -f "$ROLLBACK/spsdao-mini-validator.tgz" ]; then
-    cp "$ROLLBACK/spsdao-mini-validator.tgz" "$DIR/cache/spsdao-mini-validator.tgz"
-    npm install --global "$DIR/cache/spsdao-mini-validator.tgz" >> "$UPDATE_LOG" 2>&1 || ulog "rollback: npm install of $2 failed"
+  if [ "$MODE" = native ] && [ -f "$ROLLBACK/spudsps.tgz" ]; then
+    cp "$ROLLBACK/spudsps.tgz" "$DIR/cache/spudsps.tgz"
+    npm install --global "$DIR/cache/spudsps.tgz" >> "$UPDATE_LOG" 2>&1 || ulog "rollback: npm install of $2 failed"
   fi
   cp "$ROLLBACK/spud" "$DIR/bin/spud.new" && chmod 755 "$DIR/bin/spud.new" && mv "$DIR/bin/spud.new" "$DIR/bin/spud"
   printf '%s\n' "$1" > "$STATE_DIR/update.skip"
@@ -627,7 +627,7 @@ EOF
       mkdir -p "$AU_SYSTEMD"
       cat > "$AU_SYSTEMD/$AU_UNIT.service" <<EOF
 [Unit]
-Description=SPS Mini Validator auto-update
+Description=Spud auto-update
 
 [Service]
 Type=oneshot
@@ -636,7 +636,7 @@ ExecStart="$spud_bin" update --auto
 EOF
       cat > "$AU_SYSTEMD/$AU_UNIT.timer" <<EOF
 [Unit]
-Description=Daily SPS Mini Validator auto-update
+Description=Daily Spud auto-update
 
 [Timer]
 OnCalendar=*-*-* $(printf '%02d:%02d' "$hour" "$min"):00
@@ -731,7 +731,7 @@ cmd_uninstall() {
     launchd) launchctl bootout "gui/$UID_/$LABEL" 2>/dev/null || true; rm -f "$PLIST" ;;
   esac
   au_remove
-  [ "$MODE" = native ] && { npm uninstall --global @spsdao/mini-validator >/dev/null 2>&1 || true; }
+  [ "$MODE" = native ] && { npm uninstall --global @spudsps/validator >/dev/null 2>&1 || true; }
   link="$HOME/.local/bin/spud"
   if [ -L "$link" ] && [ "$(readlink "$link")" = "$DIR/bin/spud" ]; then rm -f "$link"; fi
   if [ -n "$purge" ]; then

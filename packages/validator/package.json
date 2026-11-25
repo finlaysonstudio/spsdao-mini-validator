@@ -1,6 +1,6 @@
 {
-  "name": "@spsdao/mini-validator",
-  "version": "0.3.1",
+  "name": "@spudsps/validator",
+  "version": "0.4.0",
   "private": true,
   "description": "Minimal SPS validator: replays Hive blocks in memory, computes L2 block hashes and performs validator duties",
   "type": "module",
@@ -15,7 +15,7 @@
     "./types": "./src/types.mts"
   },
   "bin": {
-    "sps-mini-validator": "dist/cli.mjs"
+    "spudsps": "dist/cli.mjs"
   },
   "files": [
     "dist"

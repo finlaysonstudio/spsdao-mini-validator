@@ -31,7 +31,7 @@ jobs:
           npm run build
           mkdir -p dist-release
           npm pack --workspace packages/validator --pack-destination dist-release
-          mv dist-release/*.tgz dist-release/spsdao-mini-validator.tgz
+          mv dist-release/*.tgz dist-release/spudsps.tgz
           cp install.sh spud dist-release/
 
       - name: Carry seeds forward from the previous release
