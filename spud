@@ -270,11 +270,14 @@ cmd_logs() {
   esac
 }
 
-cmd_accounts() {
+account_list() {
   accounts=$(env_get VALIDATOR_ACCOUNTS)
-  keys=$(env_get VALIDATOR_KEY)
   if [ -z "$accounts" ]; then echo "no validator accounts (hashes only)"; else printf '%s\n' "$accounts" | tr ',' '\n'; fi
-  echo "posting keys set: $(list_count "$keys")"
+}
+
+cmd_accounts() {
+  account_list
+  echo "posting keys set: $(list_count "$(env_get VALIDATOR_KEY)")"
 }
 
 valid_account() { printf '%s' "$1" | grep -Eq '^[a-z][a-z0-9.-]{2,15}$'; }
@@ -368,6 +371,11 @@ cmd_add() {
 }
 
 cmd_remove() {
+  if [ $# -eq 0 ]; then
+    printf '\033[31merror:\033[0m %s\n' "usage: spud remove <account>" >&2
+    account_list >&2
+    exit 1
+  fi
   [ $# -eq 1 ] || die "usage: spud remove <account>"
   accounts=$(env_get VALIDATOR_ACCOUNTS)
   list_has "$accounts" "$1" || die "$1 is not configured"
