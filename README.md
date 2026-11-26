@@ -67,6 +67,7 @@ which works the same for Docker, systemd and launchd installs:
 | `spud update --auto`              | Updates to the latest release if it is newer, checks it and rolls back on failure (what the daily update runs)        |
 | `spud auto-update [on\|off]`      | Shows, turns on or turns off the daily update                                                                         |
 | `spud uninstall [--purge]`        | Removes the service and `spud`; `--purge` also deletes the install directory                                          |
+| `spud`                            | Runs `spud status`, then points to `spud help`                                                                        |
 | `spud help`                       | Lists the commands                                                                                                    |
 
 The install settings (mode, release tag, image) are recorded in `install.conf`, which `spud` and

@@ -9,8 +9,9 @@ die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-usage: spud <command> [args]
+usage: spud [<command>] [args]
 
+  (none)                       status, then a pointer to this list
   status                       state, role, uptime, block and sync, release, upstream version, updates
   logs [-f] [-n N]             validator logs (-f follows)
   start | stop | restart       control the service
@@ -160,7 +161,7 @@ cmd_status() {
   if [ "$state" = running ] && [ -n "$started" ]; then row Uptime "$(duration $(($(date +%s) - started)))"
   else row Uptime "-"; fi
   accounts=$(env_get VALIDATOR_ACCOUNTS)
-  row Accounts "${accounts:-none (hashes only)}"
+  row Accounts "${accounts:-none}"
   row Block "$(block_summary)"
   row Head "$(head_summary)"
   row Release "$TAG"
@@ -273,7 +274,7 @@ cmd_logs() {
 
 account_list() {
   accounts=$(env_get VALIDATOR_ACCOUNTS)
-  if [ -z "$accounts" ]; then echo "no validator accounts (hashes only)"; else printf '%s\n' "$accounts" | tr ',' '\n'; fi
+  if [ -z "$accounts" ]; then echo "no validator accounts"; else printf '%s\n' "$accounts" | tr ',' '\n'; fi
 }
 
 cmd_accounts() {
@@ -386,7 +387,7 @@ cmd_remove() {
   unset SPUD_VALUE
   say "Removed $1 (its key stays in .env; spud config to remove it)"
   rest=$(env_get VALIDATOR_ACCOUNTS | tr ',' ' ')
-  if [ -n "$rest" ]; then restart_and_report "$rest"; else quiet_restart && say "Restarted (no accounts: hashes only)"; fi
+  if [ -n "$rest" ]; then restart_and_report "$rest"; else quiet_restart && say "Restarted (no accounts)"; fi
 }
 
 cmd_config() {
@@ -818,8 +819,13 @@ cmd_uninstall() {
   fi
 }
 
-cmd=${1:-help}
-[ $# -gt 0 ] && shift
+if [ $# -eq 0 ]; then
+  cmd_status
+  printf '\nRun `spud help` for more commands\n'
+  exit 0
+fi
+cmd=$1
+shift
 case "$cmd" in
   status) cmd_status ;;
   logs) cmd_logs "$@" ;;
