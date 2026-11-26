@@ -167,6 +167,7 @@ cmd_status() {
   upstream=${f:+$(json_str upstream_version "$f")}
   row Version "$([ -n "$upstream" ] && echo "v$upstream" || echo unknown)"
   row Update "$(update_summary)"
+  row Checked "$(checked_summary)"
 }
 
 row() { printf '%-10s%s\n' "$1" "$2"; }
@@ -509,8 +510,8 @@ cmd_update() {
   if [ -n "$auto" ]; then auto_update; return; fi
   if [ -n "$check" ]; then
     latest=$(latest_tag)
-    [ -n "$latest" ] || die "could not read the latest release of $REPO"
-    if [ "$latest" = "$TAG" ]; then say "Up to date ($TAG)"; else say "Update available: $TAG -> $latest (spud update)"; fi
+    [ -n "$latest" ] || { ulog "check failed: could not read the latest release"; exit 1; }
+    if [ "$latest" = "$TAG" ]; then ulog "up to date ($TAG)"; else ulog "update available: $TAG -> $latest (spud update)"; fi
     return
   fi
   get_installer "$version"
@@ -751,8 +752,26 @@ update_summary() {
   if [ "$(env_get AUTO_UPDATE)" = 0 ]; then printf 'off (%s)' "$hint"; return; fi
   au_installed || { printf 'not scheduled (%s)' "$hint"; return; }
   set -- $(au_time)
-  last=$(grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' "$UPDATE_LOG" 2>/dev/null | tail -n 1 || true)
-  printf 'automatically (daily at %02d:%02d local via %s%s)' "$2" "$1" "$(au_kind)" "${last:+; last: $last}"
+  printf 'automatically (daily at %02d:%02d local via %s)' "$2" "$1" "$(au_kind)"
+}
+
+# ago <seconds>: just now, 1 minute ago, 2 hours ago, 3 days ago
+ago() {
+  awk -v s="$1" 'BEGIN {
+    if (s < 60) { print "just now"; exit }
+    if (s < 3600) { n = int(s / 60); u = "minute" } else if (s < 86400) { n = int(s / 3600); u = "hour" } else { n = int(s / 86400); u = "day" }
+    printf "%d %s%s ago\n", n, u, (n == 1 ? "" : "s")
+  }'
+}
+
+# The Checked row of spud status: the last update check (scheduled or spud update --check) and its result.
+checked_summary() {
+  last=$(grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z ' "$UPDATE_LOG" 2>/dev/null | tail -n 1 || true)
+  [ -n "$last" ] || { echo "never (spud update --check)"; return; }
+  ts=${last%% *}
+  epoch=$(date -u -d "$ts" +%s 2>/dev/null || date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$ts" +%s 2>/dev/null || true)
+  if [ -n "$epoch" ]; then printf '%s (%s) %s\n' "$(ago $(($(date +%s) - epoch)))" "$ts" "${last#* }"
+  else printf '%s %s\n' "$ts" "${last#* }"; fi
 }
 
 cmd_auto_update() {
