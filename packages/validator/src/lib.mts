@@ -1,8 +1,8 @@
 /**
  * Library surface for embedding the validator (for example in a scheduled Lambda that replays a
  * range of blocks and persists the state elsewhere). Everything a host needs to load state,
- * replay, verify and persist is exported here, so hosts depend on one entry point rather than
- * on the source layout.
+ * replay, verify, persist and perform validator duties is exported here, so hosts depend on one
+ * entry point rather than on the source layout.
  */
 export { BlockProcessor, type ProcessedBlock } from "./block/processor.mjs";
 export {
@@ -16,7 +16,7 @@ export {
 export { loadSeed, type SeedMeta } from "./bootstrap/seed.mjs";
 export { readSeedMeta } from "./commands/verify.mjs";
 export { config } from "./config.mjs";
-export { getHeadBlockNum } from "./hive/client.mjs";
+export { getAccounts, getDynamicGlobalProperties, getHeadBlockNum, type HiveAccount } from "./hive/client.mjs";
 export { ReferenceApi, type RefBlock } from "./hive/reference.mjs";
 export { streamBlocks } from "./hive/stream.mjs";
 export type { HiveBlock } from "./hive/types.mjs";
@@ -30,3 +30,19 @@ export {
 } from "./state/checkpoint.mjs";
 export { StateStore } from "./state/index.mjs";
 export { deterministicPow } from "./util/pow.mjs";
+export { defaultValidatorVersion, UPSTREAM_VERSION } from "./version.mjs";
+export {
+  LiveBroadcaster,
+  parseKeys,
+  resolveSigners,
+  type Chain,
+  type Signer,
+  type SkippedAccount,
+} from "./validator/broadcast.mjs";
+export {
+  ValidatorDuties,
+  type Broadcaster,
+  type BroadcastRequest,
+  type DutiesOptions,
+  type DutyEvent,
+} from "./validator/duties.mjs";
