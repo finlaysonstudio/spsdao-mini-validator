@@ -245,7 +245,7 @@ done_message() {
 # ---------------------------------------------------------------- config
 if [ ! -f .env ]; then
   cat > .env <<EOF
-# Spud configuration (see the README "Environment" table).
+# Spud configuration (see https://spudsps.com/docs/#config).
 SEED_FILE=${DATA_DIR}/${SEED_ASSET}
 CHECKPOINT_DIR=${DATA_DIR}/checkpoints
 CHECKPOINT_EVERY=1000

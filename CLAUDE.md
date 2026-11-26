@@ -8,7 +8,9 @@ A minimal in-memory port of the TheSPSDAO/SPS-Validator block processor (target 
 1.5.1) that computes identical L2 block hashes with no database or web UI, and performs
 validator duties (signs and broadcasts; `src/validator/broadcast.mts`).
 The upstream source is checked out at `~/Code/SPS-Validator`; a running upstream node's
-Postgres is the ground truth for backtests. See README.md for usage.
+Postgres is the ground truth for backtests. Usage is documented at
+[spudsps.com/docs](https://spudsps.com/docs/) (source: `~/Code/spudsps-web`, `packages/web/src/pages/docs.astro`);
+README.md is a short introduction and quick start. Update the site docs when behaviour or configuration changes.
 
 ## Versioning
 

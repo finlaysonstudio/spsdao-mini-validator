@@ -2,7 +2,7 @@
 /**
  * spudsps: command-line entry for native installs (the Docker image runs main.mjs directly).
  *
- *   spudsps run                         follow the chain (configured by environment, see README)
+ *   spudsps run                         follow the chain (configured by environment, see spudsps.com/docs)
  *   spudsps export <checkpoint-dir> <out> [block] [--verify]
  *   spudsps verify <seed.ndjson.gz> [--reference <url>]
  *   spudsps version
@@ -12,7 +12,7 @@ import { packageVersion } from "./version.mjs";
 
 const USAGE = `usage: spudsps <run | export | verify | version> [args]
 
-  run                                        follow the chain; configured by environment (README)
+  run                                        follow the chain; configured by environment (spudsps.com/docs)
   export <checkpoint-dir> <out> [block] [--verify]
                                              write a portable seed from a checkpoint
   verify <seed.ndjson.gz> [--reference <url>]
