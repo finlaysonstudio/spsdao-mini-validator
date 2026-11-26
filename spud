@@ -346,7 +346,7 @@ cmd_add() {
   fi
   key=$(printf '%s' "$key" | tr -d '[:space:]')
   if [ -n "$key" ]; then
-    printf '%s' "$key" | grep -Eq '^5[1-9A-HJ-NP-Za-km-z]{50}$' || die "that is not a WIF private key (51 characters starting with 5)"
+    printf '%s' "$key" | grep -Eq '^5[1-9A-HJ-NP-Za-km-z]{50}$' || die "Not a Hive posting key (starting with '5')"
     if ! list_has "$keys" "$key"; then
       SPUD_VALUE="${keys:+$keys,}$key"
       export SPUD_VALUE
