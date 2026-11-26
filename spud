@@ -15,7 +15,9 @@ usage: spud <command> [args]
   logs [-f] [-n N]             validator logs (-f follows)
   start | stop | restart       control the service
   accounts                     configured validator accounts and how many keys are set
-  add <account>                add a validator account (asks for its posting key) and restart
+  add [<account>] [<key>]      add a validator account and restart; asks for the account and posting
+                               key when not given (Escape or Ctrl-C cancels)
+  add [<account>] --no-key     add the account without asking for a key
   remove <account>             remove a validator account and restart
   snapshot                     list snapshots, where they are written and when the next one is due
   snapshot now                 export a snapshot now from the newest checkpoint
@@ -277,28 +279,72 @@ cmd_accounts() {
 
 valid_account() { printf '%s' "$1" | grep -Eq '^[a-z][a-z0-9.-]{2,15}$'; }
 
-read_secret() { # read_secret <prompt>: read a line from the terminal without echo
-  [ -r /dev/tty ] || die "no terminal to read the key from"
+# read_tty <prompt> [secret]: read a line from the terminal into $reply, one character at a time so
+# Escape cancels. Ctrl-C also cancels. With "secret" nothing is echoed. The terminal is restored on exit.
+read_tty() {
+  [ -r /dev/tty ] || die "no terminal to read from"
   printf '%s' "$1" > /dev/tty
-  stty -echo < /dev/tty
-  trap 'stty echo < /dev/tty' EXIT INT TERM
-  IFS= read -r secret < /dev/tty || secret=""
-  stty echo < /dev/tty
-  trap - EXIT INT TERM
+  tty_saved=$(stty -g < /dev/tty)
+  trap 'stty "$tty_saved" < /dev/tty; printf "\n" > /dev/tty; exit 130' INT TERM
+  stty -icanon -echo min 1 time 0 < /dev/tty
+  reply=""
+  esc=$(printf '\033')
+  bs=$(printf '\177')
+  bh=$(printf '\010')
+  eot=$(printf '\004')
+  while :; do
+    c=$(dd bs=1 count=1 2>/dev/null < /dev/tty)
+    case "$c" in
+      "" | "$(printf '\r')") break ;;
+      "$esc" | "$eot") stty "$tty_saved" < /dev/tty; trap - INT TERM; printf '\n' > /dev/tty; reply=""; exit 130 ;;
+      "$bs" | "$bh")
+        if [ -n "$reply" ]; then
+          reply=${reply%?}
+          [ "${2:-}" = secret ] || printf '\b \b' > /dev/tty
+        fi ;;
+      *)
+        reply="$reply$c"
+        [ "${2:-}" = secret ] || printf '%s' "$c" > /dev/tty ;;
+    esac
+  done
+  stty "$tty_saved" < /dev/tty
+  trap - INT TERM
   printf '\n' > /dev/tty
 }
 
 cmd_add() {
-  [ $# -eq 1 ] || die "usage: spud add <account>"
-  name=$1
-  valid_account "$name" || die "not a Hive account name: $name"
+  usage_add="usage: spud add [<account>] [<posting key> | --no-key]"
+  name=""
+  key=""
+  no_key=""
+  for arg in "$@"; do
+    case "$arg" in
+      --no-key) no_key=1 ;;
+      -*) die "$usage_add" ;;
+      *)
+        if [ -z "$name" ]; then name=$arg
+        elif [ -z "$key" ]; then key=$arg
+        else die "$usage_add"; fi ;;
+    esac
+  done
+  [ -n "$no_key" ] && [ -n "$key" ] && die "$usage_add"
   accounts=$(env_get VALIDATOR_ACCOUNTS)
   keys=$(env_get VALIDATOR_KEY)
+  if [ -z "$name" ]; then
+    read_tty "Account: "
+    name=$(printf '%s' "$reply" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+    reply=""
+    [ -n "$name" ] || die "an account is required"
+  fi
+  valid_account "$name" || die "not a Hive account name: $name"
   list_has "$accounts" "$name" && die "$name is already configured"
-  secret=""
-  read_secret "Posting key for $name (Enter to use a key already configured): "
-  key=$(printf '%s' "$secret" | tr -d '[:space:]')
-  secret=""
+  if [ -z "$no_key" ] && [ -z "$key" ]; then
+    if [ -n "$keys" ]; then read_tty "Posting key for $name (Enter to use an existing key): " secret
+    else read_tty "Posting key for $name: " secret; fi
+    key=$reply
+    reply=""
+  fi
+  key=$(printf '%s' "$key" | tr -d '[:space:]')
   if [ -n "$key" ]; then
     printf '%s' "$key" | grep -Eq '^5[1-9A-HJ-NP-Za-km-z]{50}$' || die "that is not a WIF private key (51 characters starting with 5)"
     if ! list_has "$keys" "$key"; then
@@ -308,7 +354,8 @@ cmd_add() {
       unset SPUD_VALUE
     fi
   elif [ -z "$keys" ]; then
-    die "no posting key is configured yet; one is required"
+    [ -n "$no_key" ] || die "no posting key is configured yet; one is required"
+    say "No posting key is configured; the validator cannot start until one is (spud config)"
   fi
   key=""
   keys=""

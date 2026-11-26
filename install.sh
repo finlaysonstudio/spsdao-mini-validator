@@ -14,7 +14,8 @@
 #   --dir DIR           install directory (default ~/.spudsps)
 #   --version TAG       release tag (default: latest)
 #   --no-start          write files without starting
-#   --no-auto-update    do not schedule the daily update (`spud auto-update on` turns it on later)
+#   --auto-update       schedule the daily update (off by default; `spud auto-update on` turns it on later)
+#   --no-auto-update    turn the daily update off (on --update, overrides AUTO_UPDATE in .env)
 #   --update            update an existing install in <dir> (used by `spud update`): keeps .env and
 #                       data, reuses the recorded mode, skips the seed, rewrites the service and spud
 #
@@ -35,7 +36,7 @@ DIR="${HOME}/.spudsps"
 VERSION="latest"
 START=1
 UPDATE=0
-AUTO_UPDATE=1
+AUTO_UPDATE="" # empty: new installs default to off, updates follow AUTO_UPDATE in .env
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -47,8 +48,9 @@ while [ $# -gt 0 ]; do
     --version) VERSION="$2"; shift ;;
     --no-start) START=0 ;;
     --update) UPDATE=1 ;;
+    --auto-update) AUTO_UPDATE=1 ;;
     --no-auto-update) AUTO_UPDATE=0 ;;
-    -h|--help) sed -n '2,25p' "$0" 2>/dev/null || true; exit 0 ;;
+    -h|--help) sed -n '2,26p' "$0" 2>/dev/null || true; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -231,9 +233,12 @@ install_spud() { # install_spud <mode> <service>: bin/spud, install.conf and ~/.
 }
 
 done_message() {
-  # Daily auto-update, following AUTO_UPDATE in .env (spud owns the scheduler).
-  if [ "$AUTO_UPDATE" = 0 ]; then "$CONFIG_DIR/bin/spud" auto-update off || true
-  else "$CONFIG_DIR/bin/spud" auto-update sync || true; fi
+  # Daily auto-update: a flag sets it, otherwise it follows AUTO_UPDATE in .env (spud owns the scheduler).
+  case "$AUTO_UPDATE" in
+    1) "$CONFIG_DIR/bin/spud" auto-update on || true ;;
+    0) "$CONFIG_DIR/bin/spud" auto-update off || true ;;
+    *) "$CONFIG_DIR/bin/spud" auto-update sync || true ;;
+  esac
   say "Manage it with spud: spud status, spud logs -f, spud add <account>, spud update"
 }
 
@@ -252,7 +257,7 @@ VALIDATOR_ACCOUNTS=${ACCOUNTS}
 VALIDATOR_KEY=
 DUTY_LOG=${STATE_DIR}/duties.log
 # Daily update to the latest release, checked and rolled back on failure (spud auto-update on|off).
-AUTO_UPDATE=${AUTO_UPDATE}
+AUTO_UPDATE=${AUTO_UPDATE:-0}
 EOF
   chmod 600 .env
   say "Wrote ${CONFIG_DIR}/.env"

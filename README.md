@@ -34,7 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/spudsps/spudsps-validator/main/inst
 | `--dir DIR`        | Install directory (default `~/.spudsps`)                                     |
 | `--version vX.Y.Z` | Release tag (default latest)                                                            |
 | `--no-start`       | Write files only                                                                        |
-| `--no-auto-update` | Do not schedule the daily update                                                        |
+| `--auto-update`    | Schedule the daily update (off by default)                                              |
 
 The installer downloads `seed-latest.ndjson.gz` (or `seed-genesis.ndjson.gz`) from the GitHub
 release, checks it against the release's `SHA256SUMS`, writes `.env` (mode 600) and starts the
@@ -55,7 +55,8 @@ which works the same for Docker, systemd and launchd installs:
 | `spud logs [-f] [-n N]`           | Validator logs                                                                                                        |
 | `spud start` / `stop` / `restart` | Control the service                                                                                                   |
 | `spud accounts`                   | Configured accounts and how many posting keys are set (never the keys)                                                |
-| `spud add <account>`              | Asks for the posting key without echo, adds it, restarts, reports each account                                        |
+| `spud add [<account>] [<key>]`   | Adds the account and key (asks for each one not given; the key without echo), restarts, reports each account         |
+| `spud add [<account>] --no-key`  | Adds the account without asking for a key                                                                             |
 | `spud remove <account>`           | Removes the account and restarts                                                                                      |
 | `spud snapshot`                   | Lists snapshots, their directory, the schedule and the next snapshot block                                            |
 | `spud snapshot now`               | Exports a snapshot from the newest checkpoint and verifies it reloads                                                 |
@@ -73,8 +74,8 @@ The install settings (mode, release tag, image) are recorded in `install.conf`, 
 
 ### Automatic updates
 
-An install updates itself once a day, at a time picked at install so installs do not all update
-at once. The scheduler is a launchd agent on macOS, a systemd user timer on Linux, or cron
+With `--auto-update` (or `spud auto-update on`), an install updates itself once a day, at a time
+picked at install so installs do not all update at once. It is off by default. The scheduler is a launchd agent on macOS, a systemd user timer on Linux, or cron
 otherwise. Each run (`spud update --auto`):
 
 1. Compares the installed tag with the latest release (drafts and pre-releases are never latest).
