@@ -1,6 +1,6 @@
 {
   "name": "@spudsps/validator",
-  "version": "0.4.1",
+  "version": "1.0.0",
   "private": true,
   "description": "Minimal SPS validator: replays Hive blocks in memory, computes L2 block hashes and performs validator duties",
   "type": "module",
