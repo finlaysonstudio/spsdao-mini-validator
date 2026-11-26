@@ -29,5 +29,6 @@
     "sort-package-json": "^3.6.1",
     "tsx": "^4.21.0",
     "vitest": "^4.0.18"
-  }
+  },
+  "license": "MIT"
 }

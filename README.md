@@ -34,3 +34,7 @@ spud status
 ```
 
 See [spudsps.com/install](https://spudsps.com/install/) for complete instructions.
+
+## Publisher
+
+Published by [nullfame](https://github.com/nullfame) under the [MIT license](LICENSE.txt).
