@@ -13,7 +13,9 @@ Postgres is the ground truth for backtests. See README.md for usage.
 ## Versioning
 
 The root `package.json` and `packages/validator/package.json` carry the same version. Bump both
-together, and tag the release `v<version>`. 0.1.0 is the only published release.
+together in one commit named after the version, and release by merging `cleanup` into `main` with a
+merge commit, then pushing an annotated tag `v<version>` (`git tag -a vX.Y.Z -m vX.Y.Z`) on the merge
+commit, which triggers `release.yml`.
 
 ## Commands
 

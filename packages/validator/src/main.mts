@@ -191,7 +191,8 @@ async function main() {
       });
     }
     if (config.hashLog) appendFileSync(config.hashLog, `${blockNum} ${result.l2_block_id}\n`);
-    statusFile.update({ block_num: blockNum, head_block: headBlock, rate: r });
+    const inactive = config.validatorAccounts.filter((a) => !svc.validators.lookup(a, blockNum)?.is_active);
+    statusFile.update({ block_num: blockNum, head_block: headBlock, rate: r, inactive_accounts: inactive });
     duties?.duties.onBlock({ block_num: blockNum, l2_block_id: result.l2_block_id, validator: result.validator, transactions: result.transactions, head_block: headBlock });
     duties?.priceFeed?.onBlock({ block_num: blockNum, head_block: headBlock });
 

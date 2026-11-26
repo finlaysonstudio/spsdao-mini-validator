@@ -1,6 +1,7 @@
 /**
  * Progress file for `spud status`: when the process started, static facts about it (role, upstream version),
- * the newest processed block, the chain head the stream last saw, how far behind that is and the replay rate.
+ * the newest processed block, the chain head the stream last saw, how far behind that is, the replay rate and
+ * which configured accounts are not active validators (comma-separated `inactive_accounts`).
  * Rewritten atomically (temp file + rename); block updates at most once per `everyMs`.
  */
 import { renameSync, writeFileSync } from "node:fs";
@@ -9,6 +10,8 @@ export interface StatusFileEntry {
   block_num: number;
   head_block: number;
   rate: number;
+  /** Configured accounts that are not active validators at block_num. */
+  inactive_accounts?: string[];
 }
 
 export type StatusFileInfo = Record<string, string | number | boolean | null>;
@@ -49,6 +52,7 @@ export class StatusFile {
         head_block: entry.head_block,
         behind: Math.max(0, entry.head_block - entry.block_num),
         rate: Number(entry.rate.toFixed(2)),
+        ...(entry.inactive_accounts ? { inactive_accounts: entry.inactive_accounts.join(",") } : {}),
       },
       now,
     );

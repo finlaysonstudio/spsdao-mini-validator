@@ -102,6 +102,27 @@ describe("validate_block (follower)", () => {
   });
 });
 
+describe("validate_block (catching up)", () => {
+  it("defers while behind the head, then sends once caught up if nobody validated", () => {
+    const duties = make();
+    const l2 = block(duties, 1000, { validator: "alpha", head: 1010 });
+    for (let n = 1001; n < 1008; n++) block(duties, n, { head: 1010 });
+    expect(rec.sent).toEqual([]);
+    block(duties, 1008, { head: 1010 });
+    expect(rec.of("validate_block")).toEqual([{ account: "alpha", action: "validate_block", params: { block_num: 1000, hash: l2, version: "test" }, context: { role: "leader", sent_at: 1008 } }]);
+  });
+
+  it("does not duplicate a validation another node sent while this one was behind", () => {
+    const duties = make();
+    block(duties, 1000, { validator: "alpha", head: 1010 });
+    for (let n = 1001; n < 1008; n++) block(duties, n, { head: 1010 });
+    fx.svc.blocks.insertValidation(1000, "follower-trx");
+    block(duties, 1008, { head: 1010 });
+    expect(rec.sent).toEqual([]);
+    expect(rec.msgs("duty skipped")[0].fields).toMatchObject({ block_num: 1000, reason: "leader_validated" });
+  });
+});
+
 describe("chain observation", () => {
   it("reports a matching validation by a configured account as ok, against the intent", () => {
     const duties = make();
@@ -187,6 +208,23 @@ describe("check-ins", () => {
   it("does not check in without activated licenses", () => {
     const duties = make({ accounts: ["beta"], enableCheckIns: true });
     block(duties, 1000);
+    expect(rec.sent).toEqual([]);
+  });
+
+  it("waits until caught up, then checks in", () => {
+    const duties = make({ enableCheckIns: true });
+    block(duties, 1000, { head: 1100 });
+    expect(rec.sent).toEqual([]);
+    for (let n = 1001; n <= 1098; n++) block(duties, n, { head: 1100 });
+    expect(rec.of("check_in_validator").map((s) => s.params.block_num)).toEqual([1098]);
+  });
+
+  it("does not duplicate a check-in another node sent while this one was behind", () => {
+    const duties = make({ enableCheckIns: true });
+    for (let n = 1000; n < 1050; n++) block(duties, n, { head: 1100 });
+    // the other node's check-in, processed on the way to the head
+    fx.state.checkIns.set({ account: "alpha", status: "active", last_check_in_block_num: 1040, last_check_in: new Date() });
+    for (let n = 1050; n <= 1100; n++) block(duties, n, { head: 1100 });
     expect(rec.sent).toEqual([]);
   });
 

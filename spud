@@ -9,8 +9,9 @@ die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-usage: spud <command> [args]
+usage: spud [<command>] [args]
 
+  (none)                       status, then a pointer to this list
   status                       state, role, uptime, block and sync, release, upstream version, updates
   logs [-f] [-n N]             validator logs (-f follows)
   start | stop | restart       control the service
@@ -160,7 +161,12 @@ cmd_status() {
   if [ "$state" = running ] && [ -n "$started" ]; then row Uptime "$(duration $(($(date +%s) - started)))"
   else row Uptime "-"; fi
   accounts=$(env_get VALIDATOR_ACCOUNTS)
-  row Accounts "${accounts:-none (hashes only)}"
+  inactive=""
+  if [ -n "$f" ] && [ -n "$accounts" ]; then
+    reported=$(json_str inactive_accounts "$f")
+    for a in $(printf '%s' "$accounts" | tr ',' ' '); do list_has "$reported" "$a" && inactive="${inactive:+$inactive, }$a"; done
+  fi
+  row Accounts "$(account_row "$accounts" "$inactive")"
   row Block "$(block_summary)"
   row Head "$(head_summary)"
   row Release "$TAG"
@@ -168,6 +174,30 @@ cmd_status() {
   row Version "$([ -n "$upstream" ] && echo "v$upstream" || echo unknown)"
   row Update "$(update_summary)"
   row Checked "$(checked_summary)"
+  [ -z "$inactive" ] || { echo; inactive_warning "$inactive"; }
+}
+
+# account_row <accounts> <inactive>: the configured accounts, ", "-separated, each inactive one marked.
+account_row() {
+  [ -n "$1" ] || { echo none; return; }
+  out=""
+  for a in $(printf '%s' "$1" | tr ',' ' '); do
+    case ", $2, " in *", $a, "*) a="$a (INACTIVE)" ;; esac
+    out="${out:+$out, }$a"
+  done
+  echo "$out"
+}
+
+MANAGE_URL=https://thespsdao.github.io/SPS-Validator/validator-nodes/manage
+
+# inactive_warning <accounts>: points to the screen where validation is activated (a terminal link on a tty).
+inactive_warning() {
+  if [ -t 1 ]; then
+    link=$(printf '\033]8;;%s\033\\Manage Validator Node\033]8;;\033\\' "$MANAGE_URL")
+    printf '\033[33mINACTIVE ACCOUNT WARNINGS FOR %s.\033[0m Visit the %s screen to activate validation.\n' "$1" "$link"
+  else
+    printf 'INACTIVE ACCOUNT WARNINGS FOR %s. Visit the Manage Validator Node screen (%s) to activate validation.\n' "$1" "$MANAGE_URL"
+  fi
 }
 
 row() { printf '%-10s%s\n' "$1" "$2"; }
@@ -273,7 +303,7 @@ cmd_logs() {
 
 account_list() {
   accounts=$(env_get VALIDATOR_ACCOUNTS)
-  if [ -z "$accounts" ]; then echo "no validator accounts (hashes only)"; else printf '%s\n' "$accounts" | tr ',' '\n'; fi
+  if [ -z "$accounts" ]; then echo "no validator accounts"; else printf '%s\n' "$accounts" | tr ',' '\n'; fi
 }
 
 cmd_accounts() {
@@ -386,7 +416,7 @@ cmd_remove() {
   unset SPUD_VALUE
   say "Removed $1 (its key stays in .env; spud config to remove it)"
   rest=$(env_get VALIDATOR_ACCOUNTS | tr ',' ' ')
-  if [ -n "$rest" ]; then restart_and_report "$rest"; else quiet_restart && say "Restarted (no accounts: hashes only)"; fi
+  if [ -n "$rest" ]; then restart_and_report "$rest"; else quiet_restart && say "Restarted (no accounts)"; fi
 }
 
 cmd_config() {
@@ -818,8 +848,13 @@ cmd_uninstall() {
   fi
 }
 
-cmd=${1:-help}
-[ $# -gt 0 ] && shift
+if [ $# -eq 0 ]; then
+  cmd_status
+  printf '\nRun `spud help` for more commands\n'
+  exit 0
+fi
+cmd=$1
+shift
 case "$cmd" in
   status) cmd_status ;;
   logs) cmd_logs "$@" ;;

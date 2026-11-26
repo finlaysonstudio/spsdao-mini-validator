@@ -51,7 +51,7 @@ which works the same for Docker, systemd and launchd installs:
 
 | Command                           | Effect                                                                                                                |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `spud status`                     | Service state, release, accounts, the last processed block and whether it is caught up to head                        |
+| `spud status`                     | Service state, release, accounts (inactive validators marked and warned), the last processed block and sync to head   |
 | `spud logs [-f] [-n N]`           | Validator logs                                                                                                        |
 | `spud start` / `stop` / `restart` | Control the service                                                                                                   |
 | `spud accounts`                   | Configured accounts and how many posting keys are set (never the keys)                                                |
@@ -67,6 +67,7 @@ which works the same for Docker, systemd and launchd installs:
 | `spud update --auto`              | Updates to the latest release if it is newer, checks it and rolls back on failure (what the daily update runs)        |
 | `spud auto-update [on\|off]`      | Shows, turns on or turns off the daily update                                                                         |
 | `spud uninstall [--purge]`        | Removes the service and `spud`; `--purge` also deletes the install directory                                          |
+| `spud`                            | Runs `spud status`, then points to `spud help`                                                                        |
 | `spud help`                       | Lists the commands                                                                                                    |
 
 The install settings (mode, release tag, image) are recorded in `install.conf`, which `spud` and
@@ -164,7 +165,7 @@ the database.
 | `REPLAY_BATCH_SIZE`                     | 25               | Blocks fetched in parallel during catch-up         |
 | `BLOCK_CACHE_DIR`                       | (none)           | On-disk cache of raw Hive blocks                   |
 | `HASH_LOG`                              | (none)           | Append `block_num l2_block_id` lines here          |
-| `STATUS_FILE`                           | beside `HASH_LOG`| Progress JSON (block, head, behind, rate) for `spud status` |
+| `STATUS_FILE`                           | beside `HASH_LOG`| Progress JSON (block, head, behind, rate, inactive accounts) for `spud status` |
 | `STOP_BLOCK`                            | 0                | Stop after this block                              |
 | `CUSTOM_JSON_ID` / `CUSTOM_JSON_PREFIX` | `sm_sps` / `sm_` | Upstream operation ids                             |
 | `SNAPSHOT_DIR`                          | (none)           | Export a portable seed here (see Snapshots)        |

@@ -43,6 +43,12 @@ export type DutiesOptions = {
   enableCheckIns?: boolean;
   /** Re-send an unconfirmed check-in after this many blocks. */
   checkInRetryBlocks?: number;
+  /**
+   * Blocks behind the head at which this node counts as caught up. While further behind, blocks
+   * already on chain are unprocessed and may hold another node's validation or check-in, so
+   * duties wait until the node catches up and then re-check the chain.
+   */
+  caughtUpBlocks?: number;
 };
 
 type Intent = { account: string; block_num: number; hash: string; sent_at: number; role: "leader" | "follower" };
@@ -66,6 +72,7 @@ export class ValidatorDuties {
   private readonly delay: number;
   private readonly enableCheckIns: boolean;
   private readonly checkInRetryBlocks: number;
+  private readonly caughtUpBlocks: number;
 
   /** validations this node sent (or would have sent), by block number */
   private readonly intents = new Map<number, Intent>();
@@ -73,7 +80,7 @@ export class ValidatorDuties {
   /** last check-in sent per reward account */
   private readonly checkInsSent = new Map<string, CheckInSent>();
 
-  constructor({ svc, accounts, broadcaster, emit, version = defaultValidatorVersion(), validateBlockDelay = 0, enableCheckIns = true, checkInRetryBlocks = 100 }: DutiesOptions) {
+  constructor({ svc, accounts, broadcaster, emit, version = defaultValidatorVersion(), validateBlockDelay = 0, enableCheckIns = true, checkInRetryBlocks = 100, caughtUpBlocks = 2 }: DutiesOptions) {
     this.svc = svc;
     this.accounts = [...new Set(accounts.map((a) => a.trim()).filter(Boolean))];
     this.accountSet = new Set(this.accounts);
@@ -83,6 +90,7 @@ export class ValidatorDuties {
     this.delay = validateBlockDelay;
     this.enableCheckIns = enableCheckIns;
     this.checkInRetryBlocks = checkInRetryBlocks;
+    this.caughtUpBlocks = caughtUpBlocks;
   }
 
   get role(): "leader" | "follower" {
@@ -116,10 +124,17 @@ export class ValidatorDuties {
       this.emit({ status: "info", msg: "duty deferred", fields: { duty: "validate_block", account: validator, block_num, l2_block_id: hash, role: "follower", submit_after: block_num + this.delay } });
       return;
     }
+    if (head_block - block_num > this.caughtUpBlocks) {
+      // catching up: another node may already have validated this block in a block not yet processed
+      this.pending.push({ account: validator, block_num, hash, submit_after: block_num });
+      this.emit({ status: "info", msg: "duty deferred", fields: { duty: "validate_block", account: validator, block_num, l2_block_id: hash, role: "leader", reason: "catching_up" } });
+      return;
+    }
     this.sendValidation({ account: validator, block_num, hash, sent_at: block_num, role: "leader" });
   }
 
   private releasePending(block_num: number, head_block: number): void {
+    if (head_block - block_num > this.caughtUpBlocks) return;
     const maxAge = this.svc.config.validator?.max_block_age;
     for (let i = 0; i < this.pending.length; ) {
       const p = this.pending[i];
@@ -136,7 +151,7 @@ export class ValidatorDuties {
         this.emit({ status: "info", msg: "duty skipped", fields: { duty: "validate_block", account: p.account, block_num: p.block_num, reason: "leader_validated" } });
         continue;
       }
-      this.sendValidation({ account: p.account, block_num: p.block_num, hash: p.hash, sent_at: block_num, role: "follower" });
+      this.sendValidation({ account: p.account, block_num: p.block_num, hash: p.hash, sent_at: block_num, role: this.role });
     }
   }
 
@@ -171,6 +186,8 @@ export class ValidatorDuties {
     if (!cfg) return;
     // upstream: a check-in for a block older than the window would be rejected
     if (!lm.isCheckInBlockWithinWindow(head_block, block_num)) return;
+    // catching up: a check-in by another node may sit in a block not yet processed
+    if (head_block - block_num > this.caughtUpBlocks) return;
     const validator = this.svc.validators.lookup(account, block_num);
     if (!validator || !validator.is_active) return;
     const rewardAccount = validator.reward_account ?? account;

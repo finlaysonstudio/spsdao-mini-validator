@@ -34,6 +34,15 @@ describe("StatusFile", () => {
     });
   });
 
+  it("writes configured accounts that are not active validators", () => {
+    const path = fresh();
+    const s = new StatusFile(path, { startedAt: 1000 });
+    s.update({ block_num: 1, head_block: 1, rate: 0, inactive_accounts: ["alpha", "beta"] }, 2000);
+    expect(read(path).inactive_accounts).toBe("alpha,beta");
+    s.update({ block_num: 2, head_block: 2, rate: 0, inactive_accounts: [] }, 4000);
+    expect(read(path).inactive_accounts).toBe("");
+  });
+
   it("writes null progress at start", () => {
     const path = fresh();
     expect(new StatusFile(path, { startedAt: 1000 }).start(1000)).toBe(true);
